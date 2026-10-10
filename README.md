@@ -7,6 +7,13 @@ README strategy: this file is for humans deciding whether to use diffcop and get
 - If a section grows past a screen, move it to its own doc and link it.
 -->
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/branding/lockup-dark.svg">
+    <img src="docs/branding/lockup.svg" alt="diffcop" width="324">
+  </picture>
+</p>
+
 # diffcop
 
 An opinionated, local-first AI code reviewer that runs on the coding agent you already use.
