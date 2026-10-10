@@ -1,0 +1,46 @@
+{
+  "name": "diffcop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "bin": {
+    "diffcop": "./src/cli.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "diffcop": "bun src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "check": "bun run typecheck && bun run lint && bun run fmt:check && bun test --pass-with-no-tests"
+  },
+  "dependencies": {
+    "@ai-sdk/harness": "1.0.148",
+    "@ai-sdk/harness-claude-code": "1.0.152",
+    "@ai-sdk/provider-utils": "5.0.58",
+    "@octokit/core": "7.0.8",
+    "@octokit/plugin-paginate-rest": "16.0.0",
+    "@octokit/plugin-retry": "8.1.1",
+    "@octokit/request-error": "7.1.2",
+    "ai": "7.0.137",
+    "ai-sdk-sandbox-local": "0.1.2",
+    "citty": "0.2.2",
+    "ws": "8.22.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "21.2.3",
+    "@commitlint/config-conventional": "21.2.3",
+    "@types/bun": "1.4.2",
+    "lefthook": "2.2.1",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "oxlint-plugin-deslopify": "0.3.0",
+    "oxlint-tsgolint": "7.0.2003"
+  },
+  "peerDependencies": {
+    "typescript": "7.0.2"
+  }
+}

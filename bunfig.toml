@@ -1,0 +1,6 @@
+# Docs: https://bun.com/docs/runtime/bunfig
+[install]
+exact = true
+
+[test]
+root = "src"

@@ -1,0 +1,83 @@
+# Runs `diffcop review --reporter github` on the calling repo's pull request; diffcop posts the review itself.
+# The caller checks out the PR head with fetch-depth: 0 so diffcop can find the merge base.
+name: diffcop
+description: AI code review for pull requests, kept in a single PR comment.
+author: Brian Estrada
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  anthropic-api-key:
+    description: Anthropic API key. Set this or claude-code-oauth-token.
+    required: false
+  claude-code-oauth-token:
+    description: OAuth token from `claude setup-token`, for Claude subscriptions.
+    required: false
+  github-token:
+    description: Token that reads the PR and posts the review comment. Needs pull-requests write.
+    required: false
+    default: ${{ github.token }}
+  prompt:
+    description: What to ask the reviewer.
+    required: false
+    default: Review this pull request for bugs, security issues, and regressions.
+  effort:
+    description: low, medium, high, xhigh or max. Empty uses Claude Code's default.
+    required: false
+    default: high
+  debug:
+    description: Also log the reviewer's tool calls and thinking time.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.3
+
+    # The Claude Code harness bootstraps its bridge with `pnpm install` and runs it on Node.
+    - uses: actions/setup-node@v7
+      with:
+        node-version: lts/*
+
+    - uses: pnpm/action-setup@v6
+      with:
+        version: 12
+
+    - shell: bash
+      working-directory: ${{ github.action_path }}
+      run: bun install --frozen-lockfile --production
+
+    # Runs from the action's directory so Bun doesn't load the reviewed repo's .env or bunfig.toml.
+    - name: Run diffcop
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-code-oauth-token }}
+        PROMPT: ${{ inputs.prompt }}
+        EFFORT: ${{ inputs.effort }}
+        DEBUG: ${{ inputs.debug }}
+      run: |
+        # Unset secrets that aren't configured; Actions passes them as empty strings.
+        [ -n "$ANTHROPIC_API_KEY" ] || unset ANTHROPIC_API_KEY
+        [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || unset CLAUDE_CODE_OAUTH_TOKEN
+        if [ -z "${ANTHROPIC_API_KEY:-}${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+          echo "::error::Set the anthropic-api-key or claude-code-oauth-token input."
+          exit 1
+        fi
+
+        args=(review --reporter github --cwd "$GITHUB_WORKSPACE")
+        if [ -n "$EFFORT" ]; then
+          args+=(--effort "$EFFORT")
+        fi
+        if [ "$DEBUG" = "true" ]; then
+          args+=(--debug)
+        fi
+
+        # exec so a cancel's SIGINT reaches diffcop, which then marks the comment cancelled.
+        exec bun src/cli.ts "${args[@]}" "$PROMPT"

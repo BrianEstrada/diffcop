@@ -1,0 +1,28 @@
+# Git hooks, installed by lefthook's postinstall on `bun install`.
+# Docs: https://lefthook.dev/configuration/
+# Skip once with `LEFTHOOK=0 git commit ...`.
+
+pre-commit:
+  jobs:
+    # Runs first so lint sees the formatted files.
+    - name: fmt
+      run: bunx oxfmt --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+    - name: lint
+      glob: "*.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"
+      run: bunx oxlint {staged_files}
+
+    # tsc can't check single files against tsconfig, so check the whole project.
+    - name: typecheck
+      run: bun run typecheck
+
+commit-msg:
+  jobs:
+    - name: conventional-commit
+      run: bunx commitlint --edit {1}
+
+pre-push:
+  jobs:
+    - name: check
+      run: bun run check

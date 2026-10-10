@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "adversarial-review-feedback": {
+      "source": "BrianEstrada/skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-review/adversarial-review-feedback/SKILL.md",
+      "computedHash": "0206684def4c808070cf054b8641d3db00e32464011852c3e831e9c1d0cd122d"
+    }
+  }
+}

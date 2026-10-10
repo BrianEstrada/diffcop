@@ -1,0 +1,35 @@
+# Reviews this repo's PRs with the action at the repo root (action.yml), so each PR tests its own action.yml.
+# Needs one repo secret: ANTHROPIC_API_KEY, or CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`).
+name: Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # Fork PRs don't get secrets, so there's nothing to authenticate with.
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Full history so the CLI can find the merge base with the PR's base branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Other repos use BrianEstrada/diffcop@main here instead.
+      - uses: ./
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude-code-oauth-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
