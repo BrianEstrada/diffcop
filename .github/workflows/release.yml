@@ -1,7 +1,8 @@
-# Cuts a release from main: tags the current commit and creates the GitHub Release with notes
-# from git-cliff. Run it from the Actions tab.
-# It creates the tag through the Releases API rather than pushing, because main's ruleset blocks bot pushes,
-# so no release commit is made and package.json's version isn't bumped.
+# Cuts a release from main: publishes to npm, then tags the commit and creates the GitHub Release
+# with notes from git-cliff. Run it from the Actions tab.
+# npm trusted publishing (OIDC) matches this workflow by file name, so keep it `release.yml`.
+# main's ruleset blocks bot pushes, so there's no release commit: the tag comes from the Releases API,
+# and package.json's version is bumped only on the runner, for the publish.
 name: Release
 
 on:
@@ -15,6 +16,8 @@ on:
 permissions:
   # Create the tag and the GitHub Release.
   contents: write
+  # OIDC token for npm trusted publishing and provenance.
+  id-token: write
 
 concurrency:
   group: release
@@ -36,15 +39,20 @@ jobs:
         with:
           bun-version: 1.4.3
 
-      - run: bun install --frozen-lockfile
+      # Trusted publishing needs npm 11.5.1 or later, which current LTS Node ships.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
 
-      - run: bun run check
+      - run: bun install --frozen-lockfile
 
       - name: Pick the version
         id: version
         env:
           REQUESTED: ${{ inputs.version }}
         run: |
+          # The latest tag, not package.json: its version stays put on main.
           latest="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2> /dev/null || true)"
           if [ -n "$REQUESTED" ]; then
             version="${REQUESTED#v}"
@@ -67,7 +75,17 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Create the release
+      - name: Bump package.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bun pm version "$VERSION" --no-git-tag-version
+
+      - run: bun run check
+
+      # Before the tag, so a failed publish (e.g. a trusted publisher mismatch) can just be re-run.
+      - run: npm publish
+
+      - name: Create the GitHub Release
         env:
           VERSION: ${{ steps.version.outputs.version }}
           GH_TOKEN: ${{ github.token }}

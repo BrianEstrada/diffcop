@@ -34,14 +34,12 @@ for your subscription and set it as `CLAUDE_CODE_OAUTH_TOKEN`. To pay per token 
 `ANTHROPIC_API_KEY`.
 
 ```bash
-git clone https://github.com/BrianEstrada/diffcop.git
-cd diffcop
-bun install
-bun link   # puts `diffcop` on your PATH (~/.bun/bin)
-
-cd ../your-repo
-diffcop review "review this code"
+cd your-repo
+bunx diffcop review "review this code"
 ```
+
+To keep `diffcop` on your PATH, install it with `bun add --global diffcop`. It runs on Bun, so
+`npx diffcop` works only where Bun is installed.
 
 ## Usage
 

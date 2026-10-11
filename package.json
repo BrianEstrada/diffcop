@@ -1,11 +1,29 @@
 {
   "name": "diffcop",
   "version": "0.1.0",
-  "private": true,
+  "description": "An opinionated, local-first AI code reviewer that runs on the coding agent you already use.",
+  "keywords": [
+    "ai",
+    "claude-code",
+    "cli",
+    "code-review"
+  ],
+  "homepage": "https://github.com/BrianEstrada/diffcop#readme",
+  "bugs": "https://github.com/BrianEstrada/diffcop/issues",
   "license": "MIT",
-  "bin": {
-    "diffcop": "./src/cli.ts"
+  "author": "Brian Estrada",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BrianEstrada/diffcop.git"
   },
+  "bin": {
+    "diffcop": "src/cli.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "tsconfig.json"
+  ],
   "type": "module",
   "imports": {
     "#package.json": "./package.json"
@@ -43,9 +61,7 @@
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "oxlint-plugin-deslopify": "0.5.0",
-    "oxlint-tsgolint": "7.0.2004"
-  },
-  "peerDependencies": {
+    "oxlint-tsgolint": "7.0.2004",
     "typescript": "7.0.2"
   }
 }
