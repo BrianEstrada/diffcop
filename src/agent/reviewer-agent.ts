@@ -1,7 +1,7 @@
 import type { z } from "zod";
-import type { ReviewPrompt } from "../prompt/review-prompt-builder";
-import type { ReviewReporter } from "../reporter/review-reporter";
-import type { Explored } from "./explored";
+import type { ReviewPrompt } from "@/prompt/review-prompt-builder";
+import type { ReviewReporter } from "@/reporter/review-reporter";
+import type { Explored } from "@/agent/explored";
 
 export interface RunStats {
   durationMs: number;

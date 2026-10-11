@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { PullRequestContext } from "../../context/github/pull-request-context";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
 import { z } from "zod";
-import { GitHubClient } from "../../github/github-client";
-import { StickyComment } from "./sticky-comment";
+import { GitHubClient } from "@/github/github-client";
+import { StickyComment } from "@/reporter/github/sticky-comment";
 
 const pr: PullRequestContext = {
   apiUrl: "https://api.github.test",

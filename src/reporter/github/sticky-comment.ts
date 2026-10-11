@@ -1,8 +1,8 @@
 import { RequestError } from "@octokit/request-error";
 import { z } from "zod";
-import type { PullRequestContext } from "../../context/github/pull-request-context";
-import type { GitHubClient } from "../../github/github-client";
-import { unwrapResponse } from "../../github/unwrap-response";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
+import type { GitHubClient } from "@/github/github-client";
+import { unwrapResponse } from "@/github/unwrap-response";
 
 // Retries for creating the comment, on top of the first attempt.
 const CREATE_RETRIES = 3;

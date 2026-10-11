@@ -1,4 +1,4 @@
-import type { ReviewResult } from "../review/findings";
+import type { ReviewResult } from "@/review/findings";
 
 export interface TextSink {
   write(text: string): void;

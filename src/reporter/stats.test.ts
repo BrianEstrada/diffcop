@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatDuration, formatStats } from "./stats";
+import { formatDuration, formatStats } from "@/reporter/stats";
 
 describe("formatDuration", () => {
   test("shows seconds under a minute and minutes after", () => {

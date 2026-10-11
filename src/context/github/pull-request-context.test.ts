@@ -1,9 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import type { JSONType } from "../../util/json";
+import type { JSONType } from "@/util/json";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readPullRequestContext } from "./pull-request-context";
+import { readPullRequestContext } from "@/context/github/pull-request-context";
 
 const dir = await mkdtemp(join(tmpdir(), "diffcop-pr-"));
 afterAll(() => {

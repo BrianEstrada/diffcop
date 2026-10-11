@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { Explored } from "../agent/explored";
-import type { RunStats } from "../agent/reviewer-agent";
+import type { Explored } from "@/agent/explored";
+import type { RunStats } from "@/agent/reviewer-agent";
 
 export const SEVERITIES = ["high", "medium", "low", "nit"] as const;
 

@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type {
   PullRequestData,
   PullRequestSource,
-} from "./github/pull-request-data";
-import type { ChangedFile, Repository } from "./repository";
-import { ReviewContextCollector } from "./review-context-collector";
+} from "@/context/github/pull-request-data";
+import type { ChangedFile, Repository } from "@/context/repository";
+import { ReviewContextCollector } from "@/context/review-context-collector";
 
 class FakeRepository implements Repository {
   async root() {

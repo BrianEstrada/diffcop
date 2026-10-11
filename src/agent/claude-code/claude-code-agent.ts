@@ -3,13 +3,13 @@ import { createClaudeCode } from "@ai-sdk/harness-claude-code";
 import { Output } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
 import { z } from "zod";
-import { ExplorationLog, explorationCall } from "../explored";
+import { ExplorationLog, explorationCall } from "@/agent/explored";
 import type {
   AgentResult,
   AgentRun,
   ReviewerAgent,
   RunStats,
-} from "../reviewer-agent";
+} from "@/agent/reviewer-agent";
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 

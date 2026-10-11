@@ -4,8 +4,8 @@ import type {
   PullRequestFiles,
   PullRequestFileWithSha,
   PullRequestReview,
-} from "../../context/github/pull-request-data";
-import { sanitizeContent } from "./sanitize-content";
+} from "@/context/github/pull-request-data";
+import { sanitizeContent } from "@/prompt/github/sanitize-content";
 
 // Ports of claude-code-action's formatters (src/github/data/formatter.ts at
 // ed670b4), without the image downloads.

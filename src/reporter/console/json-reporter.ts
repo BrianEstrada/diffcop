@@ -1,5 +1,5 @@
-import type { ReviewResult } from "../../review/findings";
-import type { ReviewReporter, TextSink } from "../review-reporter";
+import type { ReviewResult } from "@/review/findings";
+import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
 
 // Prints one JSON object when the review is done and nothing before it, so
 // stdout parses as a whole.

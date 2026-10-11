@@ -7,6 +7,9 @@
     "diffcop": "./src/cli.ts"
   },
   "type": "module",
+  "imports": {
+    "#package.json": "./package.json"
+  },
   "scripts": {
     "diffcop": "bun src/cli.ts",
     "typecheck": "tsc --noEmit",

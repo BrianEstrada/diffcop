@@ -3,22 +3,22 @@ import { z } from "zod";
 import {
   ClaudeCodeReviewerAgent,
   EFFORTS,
-} from "../agent/claude-code/claude-code-agent";
-import { GitRepository } from "../context/git/git-repository";
-import { readPullRequestContext } from "../context/github/pull-request-context";
-import type { PullRequestContext } from "../context/github/pull-request-context";
-import { PullRequestFetcher } from "../context/github/pull-request-fetcher";
-import { ReviewContextCollector } from "../context/review-context-collector";
-import { ReviewPromptBuilder } from "../prompt/review-prompt-builder";
-import { ConsoleReporter } from "../reporter/console/console-reporter";
-import { JsonReporter } from "../reporter/console/json-reporter";
-import { GitHubClient } from "../github/github-client";
-import { GitHubReporter } from "../reporter/github/github-reporter";
-import { ReviewCommentFormatter } from "../reporter/github/review-comment-formatter";
-import { StickyComment } from "../reporter/github/sticky-comment";
-import type { ReviewReporter } from "../reporter/review-reporter";
-import { ChangeSizeLimit } from "../review/change-size-limit";
-import { CodeReviewer } from "../review/code-reviewer";
+} from "@/agent/claude-code/claude-code-agent";
+import { GitRepository } from "@/context/git/git-repository";
+import { readPullRequestContext } from "@/context/github/pull-request-context";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
+import { PullRequestFetcher } from "@/context/github/pull-request-fetcher";
+import { ReviewContextCollector } from "@/context/review-context-collector";
+import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
+import { ConsoleReporter } from "@/reporter/console/console-reporter";
+import { JsonReporter } from "@/reporter/console/json-reporter";
+import { GitHubClient } from "@/github/github-client";
+import { GitHubReporter } from "@/reporter/github/github-reporter";
+import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
+import { StickyComment } from "@/reporter/github/sticky-comment";
+import type { ReviewReporter } from "@/reporter/review-reporter";
+import { ChangeSizeLimit } from "@/review/change-size-limit";
+import { CodeReviewer } from "@/review/code-reviewer";
 
 const REPORTERS = ["console", "json", "github"] as const;
 

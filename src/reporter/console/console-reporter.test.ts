@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { TextSink } from "../review-reporter";
-import { ConsoleReporter } from "./console-reporter";
+import type { TextSink } from "@/reporter/review-reporter";
+import { ConsoleReporter } from "@/reporter/console/console-reporter";
 
 class BufferSink implements TextSink {
   text = "";

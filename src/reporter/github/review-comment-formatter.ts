@@ -1,8 +1,8 @@
-import type { PullRequestContext } from "../../context/github/pull-request-context";
-import type { ReviewResult } from "../../review/findings";
-import { reviewLayout, sectionHeading } from "../review-layout";
-import type { ReviewLayout, ReviewSection } from "../review-layout";
-import { formatStats } from "../stats";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
+import type { ReviewResult } from "@/review/findings";
+import { reviewLayout, sectionHeading } from "@/reporter/review-layout";
+import type { ReviewLayout, ReviewSection } from "@/reporter/review-layout";
+import { formatStats } from "@/reporter/stats";
 
 // GitHub rejects comment bodies over 65,536 characters.
 const MAX_COMMENT_CHARS = 60_000;

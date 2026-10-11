@@ -14,6 +14,17 @@ export default defineConfig({
   rules: {
     // GitHub's GraphQL responses are `unknown` until a Zod schema parses them.
     "deslopify/no-graphql-cast": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        patterns: [
+          {
+            regex: String.raw`^\.{1,2}/`,
+            message: "Use the `@/` alias instead of a relative import.",
+          },
+        ],
+      },
+    ],
   },
   options: {
     // The preset's `no-unsafe-*` and `no-deprecated` rules need type info.

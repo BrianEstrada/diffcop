@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { toError } from "./errors";
+import { toError } from "@/util/errors";
 
 describe("toError", () => {
   test("returns an Error as is", () => {

@@ -3,13 +3,13 @@ import type {
   PullRequestComment,
   PullRequestData,
   PullRequestReview,
-} from "../../context/github/pull-request-data";
+} from "@/context/github/pull-request-data";
 import {
   formatChangedFilesWithSha,
   formatComments,
   formatContext,
   formatReviewComments,
-} from "./pull-request-formatter";
+} from "@/prompt/github/pull-request-formatter";
 
 function comment(
   body: string,

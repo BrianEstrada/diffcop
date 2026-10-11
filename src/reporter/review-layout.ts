@@ -1,11 +1,11 @@
-import type { Explored, Search } from "../agent/explored";
-import { SEVERITIES } from "../review/findings";
+import type { Explored, Search } from "@/agent/explored";
+import { SEVERITIES } from "@/review/findings";
 import type {
   DroppedFinding,
   Finding,
   ReviewResult,
   Severity,
-} from "../review/findings";
+} from "@/review/findings";
 
 const SEVERITY_LABELS: Record<Severity, string> = {
   high: "High",
