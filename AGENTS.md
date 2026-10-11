@@ -37,8 +37,9 @@ Before writing or keeping a comment or JSDoc block, walk this:
 
 ## Releasing
 
-- Release by running the Release workflow on `main` from the Actions tab. It tags the commit and writes the GitHub Release notes from commit subjects (`feat`, `fix`, `perf`, `docs`, breaking). Don't tag or create releases by hand.
-- `bun run release-notes` previews the notes for the next release.
+- Release only when asked. Preview with `bunx git-cliff --bumped-version` and `bun run release-notes`.
+- Run `gh workflow run release.yml --ref main` (add `-f version=X.Y.Z` to override), then `gh run watch`. It tags the commit and creates the GitHub Release. Never tag or create releases by hand.
+- Notes come from commit subjects (PR titles after a squash merge): `feat`, `fix`, `perf`, `docs` and breaking changes; the rest is skipped. Use those types only for changes the action's users notice.
 
 ## PRs
 
