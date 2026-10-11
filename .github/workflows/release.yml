@@ -23,9 +23,9 @@ concurrency:
 
 jobs:
   release:
-    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@a4eae1fea54a19c2305d639340ec4e06808ed722 # main
+    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@27f39c4380fcc0943fe93f99b0573d0e3008e36e # main
     with:
       version: ${{ inputs.version }}
-      app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
     secrets:
+      app-client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
       app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
