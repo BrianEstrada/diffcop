@@ -35,6 +35,11 @@ Before writing or keeping a comment or JSDoc block, walk this:
 - Write new custom lint rules in [oxlint-plugin-deslopify](https://github.com/BrianEstrada/oxlint-deslopify), not in this repo.
 - Smoke-test with `bun run diffcop review "review this code"` on a branch with real changes.
 
+## Releasing
+
+- Release by running the Release workflow on `main` from the Actions tab. It tags the commit and writes the GitHub Release notes from commit subjects (`feat`, `fix`, `perf`, `docs`, breaking). Don't tag or create releases by hand.
+- `bun run release-notes` previews the notes for the next release.
+
 ## PRs
 
 - Title: a Conventional Commit, like the commit messages. A squash merge uses it as the commit message.

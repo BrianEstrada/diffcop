@@ -1,0 +1,76 @@
+# Cuts a release from main: tags the current commit and creates the GitHub Release with notes
+# from git-cliff. Run it from the Actions tab.
+# It creates the tag through the Releases API rather than pushing, because main's ruleset blocks bot pushes,
+# so no release commit is made and package.json's version isn't bumped.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, like 0.2.0. Leave empty to work it out from the commits.
+        required: false
+        type: string
+
+permissions:
+  # Create the tag and the GitHub Release.
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # git-cliff reads every commit and tag since the last release.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.3
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run check
+
+      - name: Pick the version
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          latest="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2> /dev/null || true)"
+          if [ -n "$REQUESTED" ]; then
+            version="${REQUESTED#v}"
+          else
+            version="$(bunx git-cliff --bumped-version)"
+            version="${version#v}"
+          fi
+          if ! echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "\"$version\" isn't a version like 1.2.3" >&2
+            exit 1
+          fi
+          # git-cliff returns the latest version when every commit since it is skipped (deps, chores).
+          if [ "v$version" = "$latest" ]; then
+            echo "Nothing to release: no feat, fix, perf, docs or breaking commits since $latest" >&2
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "Tag v$version already exists" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Create the release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bunx git-cliff --unreleased --tag "v$VERSION" --strip all > "$RUNNER_TEMP/notes.md"
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md"
