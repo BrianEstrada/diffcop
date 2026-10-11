@@ -28,8 +28,6 @@
         "oxlint": "1.87.0",
         "oxlint-plugin-deslopify": "0.5.0",
         "oxlint-tsgolint": "7.0.2004",
-      },
-      "peerDependencies": {
         "typescript": "7.0.2",
       },
     },

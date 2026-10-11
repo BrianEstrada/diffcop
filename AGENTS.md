@@ -11,7 +11,7 @@ AGENTS.md strategy: this file is for coding agents, and it's loaded into every s
 
 ## Rules
 
-- Use Bun for everything (`bun`, `bun run`, `bunx`), not node, npm, ts-node, or dotenv. Bun loads `.env` itself.
+- Use Bun for everything (`bun`, `bun run`, `bunx`), not node, npm, ts-node, or dotenv. Bun loads `.env` itself. The one exception is `npm publish` in the release workflow.
 - Prefer Bun APIs over npm packages: `` Bun.$`git ...` ``, `Bun.file`, `Bun.serve`.
 - Parse data from outside the process (GitHub API, event payloads, harness metadata) with a Zod schema, and get its type from `z.infer`. GitHub responses go through `schema.safeParse` and `unwrapResponse`.
 - Keep the reviewer agent in `src/agent/claude-code/claude-code-agent.ts` read-only (`read`, `glob`, `grep`, `permissionMode: "allow-reads"`). Never give it write or shell tools.
@@ -38,8 +38,8 @@ Before writing or keeping a comment or JSDoc block, walk this:
 ## Releasing
 
 - Release only when asked. Preview with `bunx git-cliff --bumped-version` and `bun run release-notes`.
-- Run `gh workflow run release.yml --ref main` (add `-f version=X.Y.Z` to override), then `gh run watch`. It tags the commit and creates the GitHub Release. Never tag or create releases by hand.
-- Notes come from commit subjects (PR titles after a squash merge): `feat`, `fix`, `perf`, `docs` and breaking changes; the rest is skipped. Use those types only for changes the action's users notice.
+- Run `gh workflow run release.yml --ref main` (add `-f version=X.Y.Z` to override), then `gh run watch`. The shared `bun-npm-release` workflow bumps `package.json`, prepends to `CHANGELOG.md`, commits `chore(release): vX.Y.Z`, tags, publishes to npm and creates the GitHub Release. Never do any of those steps by hand: don't edit `version`, run `bun run changelog`, tag, or run `npm publish`.
+- Notes come from commit subjects (PR titles after a squash merge): `feat`, `fix`, `perf`, `docs` and breaking changes; the rest is skipped. Use those types only for changes the CLI's or action's users notice.
 
 ## PRs
 
