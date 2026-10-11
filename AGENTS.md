@@ -35,6 +35,12 @@ Before writing or keeping a comment or JSDoc block, walk this:
 - Write new custom lint rules in [oxlint-plugin-deslopify](https://github.com/BrianEstrada/oxlint-deslopify), not in this repo.
 - Smoke-test with `bun run diffcop review "review this code"` on a branch with real changes.
 
+## Releasing
+
+- Release only when asked. Preview with `bunx git-cliff --bumped-version` and `bun run release-notes`.
+- Run `gh workflow run release.yml --ref main` (add `-f version=X.Y.Z` to override), then `gh run watch`. It tags the commit and creates the GitHub Release. Never tag or create releases by hand.
+- Notes come from commit subjects (PR titles after a squash merge): `feat`, `fix`, `perf`, `docs` and breaking changes; the rest is skipped. Use those types only for changes the action's users notice.
+
 ## PRs
 
 - Title: a Conventional Commit, like the commit messages. A squash merge uses it as the commit message.

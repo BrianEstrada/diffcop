@@ -1,0 +1,55 @@
+# git-cliff config: builds release notes from Conventional Commits. https://git-cliff.org/docs/configuration
+
+[changelog]
+body = """
+{% if version -%}
+  ## [{{ version | trim_start_matches(pat="v") }}]\
+  {% if previous.version %}(https://github.com/BrianEstrada/diffcop/compare/{{ previous.version }}...{{ version }}){% else %}(https://github.com/BrianEstrada/diffcop/releases/tag/{{ version }}){% endif %} \
+  - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+  ## Unreleased
+{% endif %}
+{% if not previous.version %}
+First release.
+{% elif not commits %}
+No user-facing changes.
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+
+{% for commit in commits -%}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }}
+{% if commit.breaking and commit.breaking_description != commit.message %}  - {{ commit.breaking_description | replace(from="\n", to=" ") | upper_first }}
+{% endif -%}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+postprocessors = [
+  { pattern = '\(#(\d+)\)', replace = "([#${1}](https://github.com/BrianEstrada/diffcop/pull/${1}))" },
+]
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+# Only changes a user of the action notices; the `<!-- n -->` prefixes set section order.
+commit_parsers = [
+  # Renovate pastes upstream release notes, whose `BREAKING CHANGE:` lines aren't ours.
+  { message = "^chore\\(deps\\)", skip = true },
+  { message = "^[a-z]+(\\(.+\\))?!:", group = "<!-- 0 -->Breaking changes" },
+  { footer = "^BREAKING[ -]CHANGE", group = "<!-- 0 -->Breaking changes" },
+  { message = "^feat(\\(.+\\))?:", group = "<!-- 1 -->Features" },
+  { message = "^fix(\\(.+\\))?:", group = "<!-- 2 -->Bug fixes" },
+  { message = "^perf(\\(.+\\))?:", group = "<!-- 3 -->Performance" },
+  { message = "^docs(\\(.+\\))?:", group = "<!-- 4 -->Documentation" },
+  { message = ".*", skip = true },
+]
+filter_commits = true
+tag_pattern = "v[0-9]+\\.[0-9]+\\.[0-9]+"
+sort_commits = "oldest"
+
+[bump]
+# On 0.x, a breaking change bumps the minor version (0.4.0 → 0.5.0), not to 1.0.0.
+breaking_always_bump_major = false
+features_always_bump_minor = true
+initial_tag = "v0.1.0"
