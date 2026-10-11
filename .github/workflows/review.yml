@@ -16,8 +16,9 @@ permissions:
 
 jobs:
   review:
-    # Fork PRs don't get secrets, so there's nothing to authenticate with.
-    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
+    # Fork PRs don't get secrets, so there's nothing to authenticate with. Renovate's PRs run updated
+    # dependencies' code, which shouldn't see the Claude secrets.
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'renovate[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
