@@ -43,7 +43,7 @@ export class ConsoleReporter implements ReviewReporter {
     this.#err.write(`\n⚠ ${message}\n`);
   }
 
-  toolCall(toolName: string, input: unknown) {
+  toolCall(toolName: string, input: string) {
     this.#err.write(`\n${toolCallLine(toolName, input)}\n`);
   }
 

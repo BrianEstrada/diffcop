@@ -1,17 +1,27 @@
 import { describe, expect, test } from "bun:test";
-import { ExplorationLog, mergeExplored } from "./explored";
+import type { JSONType } from "../util/json";
+import { ExplorationLog, explorationCall, mergeExplored } from "./explored";
+
+function call(toolName: string, input: JSONType) {
+  return explorationCall.parse({
+    toolName: toolName,
+    input: input,
+  });
+}
 
 describe("ExplorationLog", () => {
   test("records files read relative to the cwd, once each, in first-seen order", () => {
     const log = new ExplorationLog("/repo");
-    log.record("read", { file_path: "/repo/src/b.ts" });
-    log.record("read", {
-      file_path: "/repo/src/a.ts",
-      offset: 10,
-      limit: 20,
-    });
-    log.record("read", { file_path: "src/b.ts" });
-    log.record("read", { file_path: "/elsewhere/c.ts" });
+    log.record(call("read", { file_path: "/repo/src/b.ts" }));
+    log.record(
+      call("read", {
+        file_path: "/repo/src/a.ts",
+        offset: 10,
+        limit: 20,
+      }),
+    );
+    log.record(call("read", { file_path: "src/b.ts" }));
+    log.record(call("read", { file_path: "/elsewhere/c.ts" }));
     expect(log.explored().filesRead).toEqual([
       "src/b.ts",
       "src/a.ts",
@@ -21,20 +31,26 @@ describe("ExplorationLog", () => {
 
   test("records grep and glob searches with their path relative to the cwd", () => {
     const log = new ExplorationLog("/repo");
-    log.record("grep", {
-      pattern: "sumStats",
-      path: "/repo/src",
-      output_mode: "content",
-    });
-    log.record("glob", { pattern: "**/*.test.ts" });
-    log.record("grep", {
-      pattern: "costUsd",
-      path: "/repo",
-    });
-    log.record("grep", {
-      pattern: "sumStats",
-      path: "src",
-    });
+    log.record(
+      call("grep", {
+        pattern: "sumStats",
+        path: "/repo/src",
+        output_mode: "content",
+      }),
+    );
+    log.record(call("glob", { pattern: "**/*.test.ts" }));
+    log.record(
+      call("grep", {
+        pattern: "costUsd",
+        path: "/repo",
+      }),
+    );
+    log.record(
+      call("grep", {
+        pattern: "sumStats",
+        path: "src",
+      }),
+    );
     expect(log.explored().searches).toEqual([
       {
         pattern: "sumStats",
@@ -44,22 +60,32 @@ describe("ExplorationLog", () => {
       { pattern: "costUsd" },
     ]);
   });
+});
 
-  test("ignores other tools and inputs it doesn't recognize", () => {
-    const log = new ExplorationLog("/repo");
-    log.record("read", { path: "/repo/a.ts" });
-    log.record("read", "a.ts");
-    log.record("grep", { query: "x" });
-    log.record("glob", {
-      pattern: 1,
-      path: "/repo",
-    });
-    log.record("bash", { command: "cat a.ts" });
-    log.record("webSearch", { query: "x" });
-    expect(log.explored()).toEqual({
-      filesRead: [],
-      searches: [],
-    });
+describe("explorationCall", () => {
+  test("rejects other tools and inputs it doesn't recognize", () => {
+    const calls: [string, unknown][] = [
+      ["read", { path: "/repo/a.ts" }],
+      ["read", "a.ts"],
+      ["grep", { query: "x" }],
+      [
+        "glob",
+        {
+          pattern: 1,
+          path: "/repo",
+        },
+      ],
+      ["bash", { command: "cat a.ts" }],
+      ["webSearch", { query: "x" }],
+    ];
+    for (const [toolName, input] of calls) {
+      expect(
+        explorationCall.safeParse({
+          toolName: toolName,
+          input: input,
+        }).success,
+      ).toBe(false);
+    }
   });
 });
 

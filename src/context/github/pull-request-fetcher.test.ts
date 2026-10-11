@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { JSONType } from "../../util/json";
 import { GitHubClient } from "../../github/github-client";
 import type { PullRequestContext } from "./pull-request-context";
 import { PullRequestFetcher } from "./pull-request-fetcher";
@@ -89,7 +90,7 @@ const pullRequest = {
   },
 };
 
-function fakeGraphQL(data: unknown) {
+function fakeGraphQL(data: JSONType) {
   const requests: { url: string; body: unknown }[] = [];
   async function fetch(url: string, init?: RequestInit) {
     requests.push({

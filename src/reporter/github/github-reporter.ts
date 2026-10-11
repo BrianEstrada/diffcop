@@ -1,3 +1,4 @@
+import { toError } from "../../util/errors";
 import type { ReviewResult } from "../../review/findings";
 import { thinkingLine, toolCallLine, verifyingLine } from "../progress";
 import type { ReviewReporter, TextSink } from "../review-reporter";
@@ -30,8 +31,8 @@ export class GitHubReporter implements ReviewReporter {
   // Only a status update, so a failure here (e.g. a GitHub API blip) doesn't
   // stop the review; the result is still posted when it's done.
   async started() {
-    await this.#post(this.#formatter.running()).catch((error: unknown) => {
-      this.#warn(error);
+    await this.#post(this.#formatter.running()).catch((cause: unknown) => {
+      this.#warn(toError(cause));
     });
   }
 
@@ -41,7 +42,7 @@ export class GitHubReporter implements ReviewReporter {
     await this.started();
   }
 
-  toolCall(toolName: string, input: unknown) {
+  toolCall(toolName: string, input: string) {
     if (this.#debug) {
       this.#log.write(`${toolCallLine(toolName, input)}\n`);
     }
@@ -64,11 +65,11 @@ export class GitHubReporter implements ReviewReporter {
     await this.#post(this.#formatter.review(result));
   }
 
-  async failed(error: unknown, { cancelled }: { cancelled: boolean }) {
+  async failed(error: Error, { cancelled }: { cancelled: boolean }) {
     await this.#post(
       this.#formatter.failure(error, { cancelled: cancelled }),
-    ).catch((postError: unknown) => {
-      this.#warn(postError);
+    ).catch((cause: unknown) => {
+      this.#warn(toError(cause));
     });
   }
 
@@ -86,7 +87,7 @@ export class GitHubReporter implements ReviewReporter {
     }
   }
 
-  #warn(error: unknown) {
+  #warn(error: Error) {
     this.#log.write(`Couldn't update the diffcop comment: ${String(error)}\n`);
   }
 }

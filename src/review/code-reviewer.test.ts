@@ -128,7 +128,7 @@ class RecordingReporter implements ReviewReporter {
     this.events.push(["completed", completed]);
   }
 
-  async failed(error: unknown, options: { cancelled: boolean }) {
+  async failed(error: Error, options: { cancelled: boolean }) {
     this.events.push(["failed", error, options]);
   }
 }

@@ -3,7 +3,7 @@ import { createClaudeCode } from "@ai-sdk/harness-claude-code";
 import { Output } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
 import { z } from "zod";
-import { ExplorationLog } from "../explored";
+import { ExplorationLog, explorationCall } from "../explored";
 import type {
   AgentResult,
   AgentRun,
@@ -35,16 +35,15 @@ function leaseLocalPort() {
 // Claude Code reports its cost estimate only on the turn's `finish` part, which
 // the harness sends with `providerMetadata` though the AI SDK type leaves it
 // out. The non-deprecated `finalStep.providerMetadata` never has it.
-const finishCost = z.object({
-  providerMetadata: z.object({
-    "claude-code": z.object({ costUsd: z.number() }),
-  }),
-});
-
-export function costFrom(finishPart: unknown) {
-  return finishCost.safeParse(finishPart).data?.providerMetadata["claude-code"]
-    .costUsd;
-}
+export const finishCost = z
+  .object({
+    providerMetadata: z.object({
+      "claude-code": z.object({ costUsd: z.number() }),
+    }),
+  })
+  .transform((part) => {
+    return part.providerMetadata["claude-code"].costUsd;
+  });
 
 // Read-only by design: never add write or shell tools here. Under
 // "allow-reads" any other tool waits for an approval nothing grants.
@@ -124,11 +123,15 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
       const exploration = new ExplorationLog(cwd);
       for await (const part of result.stream) {
         switch (part.type) {
-          case "tool-call":
+          case "tool-call": {
             toolCalls++;
-            exploration.record(part.toolName, part.input);
-            reporter.toolCall(part.toolName, part.input);
+            const call = explorationCall.safeParse(part);
+            if (call.success) {
+              exploration.record(call.data);
+            }
+            reporter.toolCall(part.toolName, JSON.stringify(part.input));
             break;
+          }
           case "reasoning-start":
             thinkingSince = performance.now();
             break;
@@ -141,7 +144,7 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
           case "tool-approval-request":
             throw approvalRequestError(part.toolCall.toolName);
           case "finish":
-            costUsd = costFrom(part);
+            costUsd = finishCost.safeParse(part).data;
             break;
           case "error":
             throw part.error;

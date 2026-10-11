@@ -2,7 +2,7 @@ import { RequestError } from "@octokit/request-error";
 import { z } from "zod";
 import type { PullRequestContext } from "../../context/github/pull-request-context";
 import type { GitHubClient } from "../../github/github-client";
-import { parseResponse } from "../../github/parse-response";
+import { unwrapResponse } from "../../github/unwrap-response";
 
 // Retries for creating the comment, on top of the first attempt.
 const CREATE_RETRIES = 3;
@@ -32,14 +32,14 @@ function claimedRun(body: string) {
 
 // Octokit's error message is only GitHub's response message, so say which
 // request failed and with what status.
-function describeFailure(error: unknown) {
-  if (!(error instanceof RequestError)) {
-    return error;
+function describeFailure(cause: unknown) {
+  if (!(cause instanceof RequestError)) {
+    return cause;
   }
-  const { method, url } = error.request;
+  const { method, url } = cause.request;
   return new Error(
-    `GitHub API ${method} ${url} failed: ${error.status} ${error.message}`,
-    { cause: error },
+    `GitHub API ${method} ${url} failed: ${cause.status} ${cause.message}`,
+    { cause: cause },
   );
 }
 
@@ -138,9 +138,8 @@ export class StickyComment {
     // Anyone who can comment can paste the marker, so only our own comment counts.
     const login = await this.#viewerLogin();
     for await (const { data } of pages) {
-      const comments = parseResponse(
-        issueComments,
-        data,
+      const comments = unwrapResponse(
+        issueComments.safeParse(data),
         "GitHub's comment list",
       );
       const match = comments.find((c) => {
@@ -158,9 +157,8 @@ export class StickyComment {
     this.#login ??= this.#github
       .graphql<unknown>("query { viewer { login } }")
       .then((result) => {
-        const { viewer } = parseResponse(
-          viewerQuery,
-          result,
+        const { viewer } = unwrapResponse(
+          viewerQuery.safeParse(result),
           "GitHub's viewer query",
         );
         return viewer.login;

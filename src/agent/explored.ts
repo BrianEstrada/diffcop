@@ -11,13 +11,24 @@ export interface Explored {
   searches: Search[];
 }
 
-// Claude Code's input shapes for its read, glob and grep tools.
-const readInput = z.object({ file_path: z.string() });
-
 const searchInput = z.object({
   pattern: z.string(),
   path: z.string().optional(),
 });
+
+// Claude Code's read, glob and grep tool calls, as they come off the stream.
+export const explorationCall = z.discriminatedUnion("toolName", [
+  z.object({
+    toolName: z.literal("read"),
+    input: z.object({ file_path: z.string() }),
+  }),
+  z.object({
+    toolName: z.enum(["glob", "grep"]),
+    input: searchInput,
+  }),
+]);
+
+export type ExplorationCall = z.infer<typeof explorationCall>;
 
 function searchKey({ pattern, path }: Search) {
   return JSON.stringify([pattern, path]);
@@ -50,24 +61,12 @@ export class ExplorationLog {
     this.#cwd = cwd;
   }
 
-  record(toolName: string, input: unknown) {
-    switch (toolName) {
-      case "read": {
-        const read = readInput.safeParse(input);
-        if (read.success) {
-          this.#filesRead.push(this.#relative(read.data.file_path));
-        }
-        break;
-      }
-      case "glob":
-      case "grep": {
-        const search = searchInput.safeParse(input);
-        if (search.success) {
-          this.#searches.push(this.#search(search.data));
-        }
-        break;
-      }
+  record(call: ExplorationCall) {
+    if (call.toolName === "read") {
+      this.#filesRead.push(this.#relative(call.input.file_path));
+      return;
     }
+    this.#searches.push(this.#search(call.input));
   }
 
   explored(): Explored {

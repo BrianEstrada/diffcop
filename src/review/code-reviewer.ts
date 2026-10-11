@@ -5,6 +5,7 @@ import type {
   ReviewContext,
   ReviewContextCollector,
 } from "../context/review-context-collector";
+import { toError } from "../util/errors";
 import type { ReviewPromptBuilder } from "../prompt/review-prompt-builder";
 import type { ReviewReporter } from "../reporter/review-reporter";
 import { staleBaseWarning } from "./change-size-limit";
@@ -62,7 +63,7 @@ export class CodeReviewer {
       await this.#reporter.completed(result);
       return result;
     } catch (error) {
-      await this.#reporter.failed(error, {
+      await this.#reporter.failed(toError(error), {
         cancelled: abortSignal?.aborted ?? false,
       });
       throw error;

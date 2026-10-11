@@ -1,5 +1,5 @@
-export function toolCallLine(toolName: string, input: unknown) {
-  return `› ${toolName} ${JSON.stringify(input)}`;
+export function toolCallLine(toolName: string, input: string) {
+  return `› ${toolName} ${input}`;
 }
 
 // Shown so slow runs make clear where the time went.

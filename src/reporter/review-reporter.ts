@@ -1,7 +1,7 @@
 import type { ReviewResult } from "../review/findings";
 
 export interface TextSink {
-  write(text: string): unknown;
+  write(text: string): void;
 }
 
 // `started`, `warning`, `verifying` and `failed` must not throw: a report
@@ -11,9 +11,9 @@ export interface ReviewReporter {
   // Async so the GitHub reporter can update its status comment before the
   // review starts.
   warning(message: string): Promise<void>;
-  toolCall(toolName: string, input: unknown): void;
+  toolCall(toolName: string, input: string): void;
   thinking(durationMs: number): void;
   verifying(findings: number): Promise<void>;
   completed(result: ReviewResult): Promise<void>;
-  failed(error: unknown, options: { cancelled: boolean }): Promise<void>;
+  failed(error: Error, options: { cancelled: boolean }): Promise<void>;
 }

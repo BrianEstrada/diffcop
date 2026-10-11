@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { GitHubClient } from "../../github/github-client";
-import { parseResponse } from "../../github/parse-response";
+import { unwrapResponse } from "../../github/unwrap-response";
 import type { PullRequestContext } from "./pull-request-context";
 import { pullRequestData } from "./pull-request-data";
 import type { PullRequestData, PullRequestSource } from "./pull-request-data";
@@ -98,13 +98,14 @@ export class PullRequestFetcher implements PullRequestSource {
   async fetch(): Promise<PullRequestData> {
     const { repo, number, action, title, body, triggerTime } = this.#pr;
     const [owner = "", name = ""] = repo.split("/");
-    const result = parseResponse(
-      queryResult,
-      await this.#github.graphql<unknown>(PR_QUERY, {
-        owner: owner,
-        repo: name,
-        number: number,
-      }),
+    const result = unwrapResponse(
+      queryResult.safeParse(
+        await this.#github.graphql<unknown>(PR_QUERY, {
+          owner: owner,
+          repo: name,
+          number: number,
+        }),
+      ),
       "GitHub's pull request query",
     );
     const pullRequest = result.repository.pullRequest;

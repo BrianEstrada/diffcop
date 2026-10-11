@@ -169,7 +169,7 @@ describe("GitHubReporter", () => {
     const { fetch } = fakeGitHub();
     const { reporter, log } = createReporter(fetch);
 
-    reporter.toolCall("read", { path: "a.ts" });
+    reporter.toolCall("read", '{"path":"a.ts"}');
     reporter.thinking(2_400);
 
     expect(log.text).toBe("");
@@ -179,7 +179,7 @@ describe("GitHubReporter", () => {
     const { fetch } = fakeGitHub();
     const { reporter, log } = createReporter(fetch, [], { debug: true });
 
-    reporter.toolCall("read", { path: "a.ts" });
+    reporter.toolCall("read", '{"path":"a.ts"}');
     reporter.thinking(2_400);
 
     expect(log.text).toBe('› read {"path":"a.ts"}\n› thinking (2s)\n');

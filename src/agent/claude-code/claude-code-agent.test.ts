@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   approvalRequestError,
-  costFrom,
+  finishCost,
   REVIEWER_TOOLS,
 } from "./claude-code-agent";
 
@@ -19,29 +19,29 @@ describe("approvalRequestError", () => {
   });
 });
 
-describe("costFrom", () => {
+describe("finishCost", () => {
   test("reads Claude Code's cost estimate from the finish part", () => {
     expect(
-      costFrom({
+      finishCost.safeParse({
         type: "finish",
         providerMetadata: { "claude-code": { costUsd: 0.42 } },
-      }),
+      }).data,
     ).toBe(0.42);
   });
 
   test("is undefined when the finish part has no usable cost", () => {
-    expect(costFrom({ type: "finish" })).toBeUndefined();
+    expect(finishCost.safeParse({ type: "finish" }).data).toBeUndefined();
     expect(
-      costFrom({
+      finishCost.safeParse({
         type: "finish",
         providerMetadata: { "claude-code": {} },
-      }),
+      }).data,
     ).toBeUndefined();
     expect(
-      costFrom({
+      finishCost.safeParse({
         type: "finish",
         providerMetadata: { "claude-code": { costUsd: "0.42" } },
-      }),
+      }).data,
     ).toBeUndefined();
   });
 });

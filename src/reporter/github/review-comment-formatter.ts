@@ -60,7 +60,7 @@ export class ReviewCommentFormatter {
     ]);
   }
 
-  failure(error: unknown, { cancelled = false } = {}) {
+  failure(error: Error, { cancelled = false } = {}) {
     if (cancelled) {
       return this.#frame([
         `⚪ The review of \`${this.#shortSha()}\` was cancelled before it finished.${this.#runLink("See the run")}`,
@@ -110,10 +110,8 @@ export class ReviewCommentFormatter {
     return blocks.join(BLOCK_GAP);
   }
 
-  #errorMessage(error: unknown) {
-    const message = this.#redact(
-      error instanceof Error ? error.message : String(error),
-    );
+  #errorMessage(error: Error) {
+    const message = this.#redact(error.message);
     // Keep the message inside its code fence.
     return message.slice(0, MAX_ERROR_CHARS).replaceAll("```", "'''");
   }

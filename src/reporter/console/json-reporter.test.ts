@@ -59,7 +59,7 @@ describe("JsonReporter", () => {
     };
 
     await reporter.started();
-    reporter.toolCall("read", { path: "a.ts" });
+    reporter.toolCall("read", '{"path":"a.ts"}');
     reporter.thinking(2_400);
     await reporter.verifying(2);
     await reporter.completed(result);

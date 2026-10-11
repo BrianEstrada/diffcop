@@ -13,7 +13,7 @@ AGENTS.md strategy: this file is for coding agents, and it's loaded into every s
 
 - Use Bun for everything (`bun`, `bun run`, `bunx`), not node, npm, ts-node, or dotenv. Bun loads `.env` itself.
 - Prefer Bun APIs over npm packages: `` Bun.$`git ...` ``, `Bun.file`, `Bun.serve`.
-- Parse data from outside the process (GitHub API, event payloads, harness metadata) with a Zod schema, and get its type from `z.infer`. GitHub responses go through `parseResponse`.
+- Parse data from outside the process (GitHub API, event payloads, harness metadata) with a Zod schema, and get its type from `z.infer`. GitHub responses go through `schema.safeParse` and `unwrapResponse`.
 - Keep the reviewer agent in `src/agent/claude-code/claude-code-agent.ts` read-only (`read`, `glob`, `grep`, `permissionMode: "allow-reads"`). Never give it write or shell tools.
 - To add a subcommand, create `src/commands/<name>.ts` with a default-exported `defineCommand` and lazy-load it from `subCommands` in `src/cli.ts`.
 

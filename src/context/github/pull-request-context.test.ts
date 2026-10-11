@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import type { JSONType } from "../../util/json";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +13,7 @@ afterAll(() => {
   });
 });
 
-async function writeEvent(name: string, event: unknown) {
+async function writeEvent(name: string, event: JSONType) {
   const path = join(dir, name);
   await Bun.write(path, JSON.stringify(event));
   return path;
