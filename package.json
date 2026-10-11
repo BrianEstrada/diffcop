@@ -36,6 +36,7 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "check": "bun run typecheck && bun run lint && bun run fmt:check && bun test --pass-with-no-tests",
+    "changelog": "if grep -qF \"## [$npm_package_version]\" CHANGELOG.md; then echo \"CHANGELOG.md already has $npm_package_version\"; exit 1; fi; git-cliff --unreleased --tag v$npm_package_version --prepend CHANGELOG.md && oxfmt CHANGELOG.md",
     "release-notes": "git-cliff --unreleased --strip all"
   },
   "dependencies": {

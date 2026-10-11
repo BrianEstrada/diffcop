@@ -1,21 +1,19 @@
-# Cuts a release from main: publishes to npm, then tags the commit and creates the GitHub Release
-# with notes from git-cliff. Run it from the Actions tab.
+# Cuts a release from main with the shared bun-npm-release workflow: bumps the version, updates
+# CHANGELOG.md, commits and tags it, publishes to npm and creates the GitHub Release.
+# Run it from the Actions tab.
 # npm trusted publishing (OIDC) matches this workflow by file name, so keep it `release.yml`.
-# main's ruleset blocks bot pushes, so there's no release commit: the tag comes from the Releases API,
-# and package.json's version is bumped only on the runner, for the publish.
 name: Release
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to release, like 0.2.0. Leave empty to work it out from the commits.
+        description: Version to release, like 1.2.3. Leave empty to work it out from the commits.
         required: false
         type: string
 
 permissions:
-  # Create the tag and the GitHub Release.
-  contents: write
+  contents: read
   # OIDC token for npm trusted publishing and provenance.
   id-token: write
 
@@ -25,47 +23,9 @@ concurrency:
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          # git-cliff reads every commit and tag since the last release.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.4.3
-
-      # Trusted publishing needs npm 11.5.1 or later, which current LTS Node ships.
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: lts/*
-          registry-url: https://registry.npmjs.org
-
-      - run: bun install --frozen-lockfile
-
-      - id: version
-        uses: BrianEstrada/.github/git-cliff-version@4a23053ced2816db78af5015fd62b75aff614ecf # main
-        with:
-          version: ${{ inputs.version }}
-
-      - name: Bump package.json
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: bun pm version "$VERSION" --no-git-tag-version
-
-      - run: bun run check
-
-      # Before the tag, so a failed publish (e.g. a trusted publisher mismatch) can just be re-run.
-      - run: npm publish
-
-      - name: Create the GitHub Release
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          bunx git-cliff --unreleased --tag "v$VERSION" --strip all > "$RUNNER_TEMP/notes.md"
-          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@a3365073142d6188b8e60334052183ae289b4ba3 # main
+    with:
+      version: ${{ inputs.version }}
+      app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+    secrets:
+      app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}

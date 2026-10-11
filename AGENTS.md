@@ -38,7 +38,7 @@ Before writing or keeping a comment or JSDoc block, walk this:
 ## Releasing
 
 - Release only when asked. Preview with `bunx git-cliff --bumped-version` and `bun run release-notes`.
-- Run `gh workflow run release.yml --ref main` (add `-f version=X.Y.Z` to override), then `gh run watch`. It publishes to npm, tags the commit and creates the GitHub Release. Never tag, create releases or run `npm publish` by hand.
+- Run `gh workflow run release.yml --ref main` (add `-f version=X.Y.Z` to override), then `gh run watch`. The shared `bun-npm-release` workflow bumps `package.json`, prepends to `CHANGELOG.md`, commits `chore(release): vX.Y.Z`, tags, publishes to npm and creates the GitHub Release. Never do any of those steps by hand: don't edit `version`, run `bun run changelog`, tag, or run `npm publish`.
 - Notes come from commit subjects (PR titles after a squash merge): `feat`, `fix`, `perf`, `docs` and breaking changes; the rest is skipped. Use those types only for changes the CLI's or action's users notice.
 
 ## PRs
