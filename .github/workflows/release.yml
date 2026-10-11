@@ -11,6 +11,11 @@ on:
         description: Version to release, like 1.2.3. Leave empty to work it out from the commits.
         required: false
         type: string
+      publish-only:
+        description: Only publish the already tagged version above, e.g. after npm rejected the publish.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,9 +28,10 @@ concurrency:
 
 jobs:
   release:
-    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@27f39c4380fcc0943fe93f99b0573d0e3008e36e # main
+    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@7127b39d86cea984c8de0fe0e5e0d81766c30706 # main
     with:
       version: ${{ inputs.version }}
+      publish-only: ${{ inputs.publish-only }}
     secrets:
       app-client-id: ${{ secrets.RELEASE_APP_CLIENT_ID }}
       app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
