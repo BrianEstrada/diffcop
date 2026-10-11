@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { ChangedFile } from "../context/repository";
+import type { ChangedFile } from "@/context/repository";
 import {
   ChangeSizeLimit,
   measureChangeSize,
   staleBaseWarning,
-} from "./change-size-limit";
+} from "@/review/change-size-limit";
 
 function file(path: string, additions: number, deletions = 0): ChangedFile {
   return {

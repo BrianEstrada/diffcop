@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import type { Repository } from "../repository";
+import type { Repository } from "@/context/repository";
 
 function lines(text: string) {
   return text.split("\n").filter(Boolean);

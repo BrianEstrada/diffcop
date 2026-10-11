@@ -1,4 +1,4 @@
-import type { RunStats } from "../agent/reviewer-agent";
+import type { RunStats } from "@/agent/reviewer-agent";
 
 const compact = new Intl.NumberFormat("en", {
   notation: "compact",

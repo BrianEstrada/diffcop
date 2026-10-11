@@ -1,9 +1,9 @@
-import { toError } from "../../util/errors";
-import type { ReviewResult } from "../../review/findings";
-import { thinkingLine, toolCallLine, verifyingLine } from "../progress";
-import type { ReviewReporter, TextSink } from "../review-reporter";
-import type { ReviewCommentFormatter } from "./review-comment-formatter";
-import type { StickyComment } from "./sticky-comment";
+import { toError } from "@/util/errors";
+import type { ReviewResult } from "@/review/findings";
+import { thinkingLine, toolCallLine, verifyingLine } from "@/reporter/progress";
+import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
+import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
+import type { StickyComment } from "@/reporter/github/sticky-comment";
 
 export interface GitHubReporterOptions {
   // Also log tool calls and thinking time, to see where a slow run went.

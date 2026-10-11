@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import type { RunStats } from "../../agent/reviewer-agent";
-import type { PullRequestContext } from "../../context/github/pull-request-context";
+import type { RunStats } from "@/agent/reviewer-agent";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
 import type {
   DroppedFinding,
   Finding,
   ReviewResult,
   Scope,
   Severity,
-} from "../../review/findings";
-import { ReviewCommentFormatter } from "./review-comment-formatter";
+} from "@/review/findings";
+import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 
 const pr: PullRequestContext = {
   apiUrl: "https://api.github.test",

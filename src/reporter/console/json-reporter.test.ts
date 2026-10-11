@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { ReviewResult } from "../../review/findings";
-import type { ReviewReporter, TextSink } from "../review-reporter";
-import { JsonReporter } from "./json-reporter";
+import type { ReviewResult } from "@/review/findings";
+import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
+import { JsonReporter } from "@/reporter/console/json-reporter";
 
 class BufferSink implements TextSink {
   text = "";

@@ -3,8 +3,8 @@ import type {
   PullRequestFile,
   PullRequestFileWithSha,
   PullRequestSource,
-} from "./github/pull-request-data";
-import type { ChangedFile, Repository } from "./repository";
+} from "@/context/github/pull-request-data";
+import type { ChangedFile, Repository } from "@/context/repository";
 
 export interface PullRequestDetails {
   data: PullRequestData;

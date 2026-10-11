@@ -1,9 +1,9 @@
-import type { ReviewResult } from "../../review/findings";
-import { thinkingLine, toolCallLine, verifyingLine } from "../progress";
-import { reviewLayout, sectionHeading } from "../review-layout";
-import type { ReviewLayout } from "../review-layout";
-import type { ReviewReporter, TextSink } from "../review-reporter";
-import { formatStats } from "../stats";
+import type { ReviewResult } from "@/review/findings";
+import { thinkingLine, toolCallLine, verifyingLine } from "@/reporter/progress";
+import { reviewLayout, sectionHeading } from "@/reporter/review-layout";
+import type { ReviewLayout } from "@/reporter/review-layout";
+import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
+import { formatStats } from "@/reporter/stats";
 
 function formatMarkdown({ headline, sections }: ReviewLayout) {
   return [

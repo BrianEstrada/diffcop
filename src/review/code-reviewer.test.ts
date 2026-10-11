@@ -1,17 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import type { Explored } from "../agent/explored";
-import type {
-  AgentRun,
-  ReviewerAgent,
-  RunStats,
-} from "../agent/reviewer-agent";
-import type { ChangedFile, Repository } from "../context/repository";
-import { ReviewContextCollector } from "../context/review-context-collector";
-import { ReviewPromptBuilder } from "../prompt/review-prompt-builder";
-import type { ReviewReporter } from "../reporter/review-reporter";
-import { ChangeSizeLimit } from "./change-size-limit";
-import { CodeReviewer } from "./code-reviewer";
-import type { Finding, ReviewResult } from "./findings";
+import type { Explored } from "@/agent/explored";
+import type { AgentRun, ReviewerAgent, RunStats } from "@/agent/reviewer-agent";
+import type { ChangedFile, Repository } from "@/context/repository";
+import { ReviewContextCollector } from "@/context/review-context-collector";
+import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
+import type { ReviewReporter } from "@/reporter/review-reporter";
+import { ChangeSizeLimit } from "@/review/change-size-limit";
+import { CodeReviewer } from "@/review/code-reviewer";
+import type { Finding, ReviewResult } from "@/review/findings";
 
 class FakeRepository implements Repository {
   readonly #changedFiles: ChangedFile[];

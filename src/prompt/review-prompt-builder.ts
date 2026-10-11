@@ -1,16 +1,16 @@
 import type {
   PullRequestDetails,
   ReviewContext,
-} from "../context/review-context-collector";
-import { numberFindings } from "../review/findings";
-import type { Finding } from "../review/findings";
+} from "@/context/review-context-collector";
+import { numberFindings } from "@/review/findings";
+import type { Finding } from "@/review/findings";
 import {
   formatChangedFilesWithSha,
   formatComments,
   formatContext,
   formatReviewComments,
-} from "./github/pull-request-formatter";
-import { sanitizeContent } from "./github/sanitize-content";
+} from "@/prompt/github/pull-request-formatter";
+import { sanitizeContent } from "@/prompt/github/sanitize-content";
 
 const DEFAULT_MAX_DIFF_CHARS = 200_000;
 

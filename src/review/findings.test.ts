@@ -5,8 +5,8 @@ import {
   numberFindings,
   splitByVerdict,
   verdictsSchema,
-} from "./findings";
-import type { Finding } from "./findings";
+} from "@/review/findings";
+import type { Finding } from "@/review/findings";
 
 function finding(title: string): Finding {
   return {

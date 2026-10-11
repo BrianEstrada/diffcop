@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import type { PullRequestContext } from "../../context/github/pull-request-context";
-import type { ReviewResult } from "../../review/findings";
-import type { ReviewReporter, TextSink } from "../review-reporter";
-import { GitHubClient } from "../../github/github-client";
-import { GitHubReporter } from "./github-reporter";
-import type { GitHubReporterOptions } from "./github-reporter";
-import { ReviewCommentFormatter } from "./review-comment-formatter";
-import { StickyComment } from "./sticky-comment";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
+import type { ReviewResult } from "@/review/findings";
+import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
+import { GitHubClient } from "@/github/github-client";
+import { GitHubReporter } from "@/reporter/github/github-reporter";
+import type { GitHubReporterOptions } from "@/reporter/github/github-reporter";
+import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
+import { StickyComment } from "@/reporter/github/sticky-comment";
 
 const pr: PullRequestContext = {
   apiUrl: "https://api.github.test",

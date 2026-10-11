@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sanitizeContent } from "./sanitize-content";
+import { sanitizeContent } from "@/prompt/github/sanitize-content";
 
 describe("sanitizeContent", () => {
   test("strips HTML comments", () => {

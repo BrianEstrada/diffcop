@@ -1,17 +1,21 @@
-import { mergeExplored } from "../agent/explored";
-import { sumStats } from "../agent/reviewer-agent";
-import type { ReviewerAgent } from "../agent/reviewer-agent";
+import { mergeExplored } from "@/agent/explored";
+import { sumStats } from "@/agent/reviewer-agent";
+import type { ReviewerAgent } from "@/agent/reviewer-agent";
 import type {
   ReviewContext,
   ReviewContextCollector,
-} from "../context/review-context-collector";
-import { toError } from "../util/errors";
-import type { ReviewPromptBuilder } from "../prompt/review-prompt-builder";
-import type { ReviewReporter } from "../reporter/review-reporter";
-import { staleBaseWarning } from "./change-size-limit";
-import type { ChangeSizeLimit } from "./change-size-limit";
-import { findingsSchema, splitByVerdict, verdictsSchema } from "./findings";
-import type { ReviewResult } from "./findings";
+} from "@/context/review-context-collector";
+import { toError } from "@/util/errors";
+import type { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
+import type { ReviewReporter } from "@/reporter/review-reporter";
+import { staleBaseWarning } from "@/review/change-size-limit";
+import type { ChangeSizeLimit } from "@/review/change-size-limit";
+import {
+  findingsSchema,
+  splitByVerdict,
+  verdictsSchema,
+} from "@/review/findings";
+import type { ReviewResult } from "@/review/findings";
 
 export interface ReviewRequest {
   request: string;

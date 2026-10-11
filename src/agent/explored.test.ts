@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { JSONType } from "../util/json";
-import { ExplorationLog, explorationCall, mergeExplored } from "./explored";
+import type { JSONType } from "@/util/json";
+import {
+  ExplorationLog,
+  explorationCall,
+  mergeExplored,
+} from "@/agent/explored";
 
 function call(toolName: string, input: JSONType) {
   return explorationCall.parse({

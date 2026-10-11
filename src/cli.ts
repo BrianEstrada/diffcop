@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { defineCommand, runMain } from "citty";
-import pkg from "../package.json";
+import pkg from "#package.json";
 
 const main = defineCommand({
   meta: {
@@ -10,7 +10,7 @@ const main = defineCommand({
   },
   subCommands: {
     review: () => {
-      return import("./commands/review").then((m) => {
+      return import("@/commands/review").then((m) => {
         return m.default;
       });
     },

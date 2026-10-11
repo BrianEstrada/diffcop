@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { sumStats } from "./reviewer-agent";
+import { sumStats } from "@/agent/reviewer-agent";
 
 describe("sumStats", () => {
   test("adds up every stat both runs reported", () => {

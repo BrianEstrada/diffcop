@@ -1,9 +1,12 @@
 import { z } from "zod";
-import type { GitHubClient } from "../../github/github-client";
-import { unwrapResponse } from "../../github/unwrap-response";
-import type { PullRequestContext } from "./pull-request-context";
-import { pullRequestData } from "./pull-request-data";
-import type { PullRequestData, PullRequestSource } from "./pull-request-data";
+import type { GitHubClient } from "@/github/github-client";
+import { unwrapResponse } from "@/github/unwrap-response";
+import type { PullRequestContext } from "@/context/github/pull-request-context";
+import { pullRequestData } from "@/context/github/pull-request-data";
+import type {
+  PullRequestData,
+  PullRequestSource,
+} from "@/context/github/pull-request-data";
 
 const COMMENT_FIELDS = `
   body

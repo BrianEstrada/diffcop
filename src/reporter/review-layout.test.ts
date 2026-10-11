@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { Explored } from "../agent/explored";
-import type { DroppedFinding, Finding } from "../review/findings";
-import { code, reviewLayout, sectionHeading } from "./review-layout";
+import type { Explored } from "@/agent/explored";
+import type { DroppedFinding, Finding } from "@/review/findings";
+import { code, reviewLayout, sectionHeading } from "@/reporter/review-layout";
 
 const low: Finding = {
   file: "src/b.ts",

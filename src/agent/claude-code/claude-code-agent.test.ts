@@ -3,7 +3,7 @@ import {
   approvalRequestError,
   finishCost,
   REVIEWER_TOOLS,
-} from "./claude-code-agent";
+} from "@/agent/claude-code/claude-code-agent";
 
 describe("REVIEWER_TOOLS", () => {
   test("only grants read-only tools", () => {

@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { ChangedFile } from "../context/repository";
+import type { ChangedFile } from "@/context/repository";
 
 // Generated, often huge, and not worth the reviewer's attention.
 const LOCKFILES = new Set([

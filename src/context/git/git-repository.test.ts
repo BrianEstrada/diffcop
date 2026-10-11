@@ -3,7 +3,7 @@ import { $ } from "bun";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { GitRepository } from "./git-repository";
+import { GitRepository } from "@/context/git/git-repository";
 
 let dir: string;
 
