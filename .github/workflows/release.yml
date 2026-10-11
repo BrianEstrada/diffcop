@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   release:
-    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@a3365073142d6188b8e60334052183ae289b4ba3 # main
+    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@e35da7f7530f5016f6942321889a66fbb8944b50 # main
     with:
       version: ${{ inputs.version }}
       app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
