@@ -40,7 +40,7 @@
     "release-notes": "git-cliff --unreleased --strip all"
   },
   "dependencies": {
-    "@ai-sdk/harness": "1.0.148",
+    "@ai-sdk/harness": "1.0.151",
     "@ai-sdk/harness-claude-code": "1.0.152",
     "@ai-sdk/provider-utils": "5.0.58",
     "@octokit/core": "7.0.8",
