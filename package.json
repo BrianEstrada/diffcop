@@ -47,7 +47,7 @@
     "@octokit/plugin-paginate-rest": "16.0.0",
     "@octokit/plugin-retry": "8.1.1",
     "@octokit/request-error": "7.1.2",
-    "ai": "7.0.137",
+    "ai": "7.0.147",
     "ai-sdk-sandbox-local": "0.1.2",
     "citty": "0.2.2",
     "ws": "8.22.0",
