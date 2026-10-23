@@ -1,11 +1,16 @@
+import type { RunStats } from "@/agent/reviewer-agent";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
 import type { ReviewResult } from "@/review/findings";
+import type { SavedReview } from "@/review/saved-review";
+import { savedReviewMarker } from "@/reporter/github/saved-review-marker";
 import { reviewLayout, sectionHeading } from "@/reporter/review-layout";
 import type { ReviewLayout, ReviewSection } from "@/reporter/review-layout";
 import { formatStats } from "@/reporter/stats";
 
 // GitHub rejects comment bodies over 65,536 characters.
 const MAX_COMMENT_CHARS = 60_000;
+// Room left under GitHub's limit for the markers `StickyComment` adds.
+const MAX_SAVED_COMMENT_CHARS = 65_000;
 const MAX_ERROR_CHARS = 2_000;
 
 const TRUNCATED = "_Review truncated; see the job log for the rest._";
@@ -76,16 +81,39 @@ export class ReviewCommentFormatter {
   }
 
   review(result: ReviewResult) {
-    const { stats } = result;
-    const footer = [`Reviewed ${this.#shortSha()}`, formatStats(stats)].join(
-      " · ",
+    return this.savedReview({
+      version: 1,
+      headSha: this.#pr.headSha,
+      descriptionAt: this.#pr.triggerTime,
+      warnings: [...this.#warnings],
+      result: result,
+    });
+  }
+
+  // `recheck` is the run that re-checked only the description, shown beside the review's own stats.
+  savedReview(saved: SavedReview, { recheck }: { recheck?: RunStats } = {}) {
+    const { headSha, warnings, result } = saved;
+    const footer = [
+      `Reviewed ${headSha.slice(0, 7)}`,
+      formatStats(result.stats),
+    ];
+    if (recheck) {
+      footer.push(`description re-checked in ${formatStats(recheck)}`);
+    }
+    const body = this.#frame(
+      [
+        this.#body(reviewLayout(result)),
+        "",
+        "---",
+        `<sub>${footer.join(" · ")}${this.#runLink("run")}</sub>`,
+      ],
+      warnings,
     );
-    return this.#frame([
-      this.#body(reviewLayout(result)),
-      "",
-      "---",
-      `<sub>${footer}${this.#runLink("run")}</sub>`,
-    ]);
+    const marker = savedReviewMarker(saved, this.#secrets);
+    if (body.length + 1 + marker.length > MAX_SAVED_COMMENT_CHARS) {
+      return body;
+    }
+    return `${body}\n${marker}`;
   }
 
   // Truncates inside a section's body, so a cut never leaves <details> open.
@@ -124,8 +152,8 @@ export class ReviewCommentFormatter {
     return redacted;
   }
 
-  #frame(lines: string[]) {
-    const alerts = this.#warnings.flatMap((warning) => {
+  #frame(lines: string[], warnings = this.#warnings) {
+    const alerts = warnings.flatMap((warning) => {
       return ["> [!WARNING]", `> ${warning}`, ""];
     });
     return ["## diffcop review", "", ...alerts, ...lines].join("\n");

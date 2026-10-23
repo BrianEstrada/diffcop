@@ -69,6 +69,43 @@ export class StickyComment {
     }
   }
 
+  async read() {
+    try {
+      return (await this.#find())?.body;
+    } catch (error) {
+      throw describeFailure(error);
+    }
+  }
+
+  // Edits the comment in place, keeping the run that claimed it, so a re-check never outranks a newer
+  // review. `update` gets the current body and returns undefined to leave it; false if nothing was written.
+  async rewrite(update: (body: string) => string | undefined) {
+    try {
+      const existing = await this.#find();
+      const body = existing?.body;
+      const updated = body === undefined ? undefined : update(body);
+      if (!existing || body === undefined || updated === undefined) {
+        return false;
+      }
+      const claimedBy = claimedRun(body);
+      await this.#github.request(
+        "PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}",
+        {
+          ...this.#repo(),
+          comment_id: existing.id,
+          body: [
+            MARKER,
+            ...(claimedBy ? [runMarker(claimedBy)] : []),
+            updated,
+          ].join("\n"),
+        },
+      );
+      return true;
+    } catch (error) {
+      throw describeFailure(error);
+    }
+  }
+
   async #upsert(
     body: string,
     onlyIfOwned: boolean,

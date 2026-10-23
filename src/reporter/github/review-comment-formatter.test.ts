@@ -9,6 +9,8 @@ import type {
   Severity,
 } from "@/review/findings";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
+import { readSavedReview } from "@/reporter/github/saved-review-marker";
+import type { SavedReview } from "@/review/saved-review";
 
 const pr: PullRequestContext = {
   apiUrl: "https://api.github.test",
@@ -167,7 +169,10 @@ describe("ReviewCommentFormatter.review", () => {
         costUsd: 0.42,
       },
     });
-    expect(body.split("\n").at(-1)).toBe(
+    const footer = body.split("\n").find((line) => {
+      return line.startsWith("<sub>");
+    });
+    expect(footer).toBe(
       "<sub>Reviewed abc1234 · 1m 51s · 14 tool calls · 312K input tokens (95% cached) · 4.1K output · ~$0.42 [run](https://github.com/owner/repo/actions/runs/42)</sub>",
     );
   });
@@ -199,6 +204,19 @@ describe("ReviewCommentFormatter.review", () => {
     expect(body).toContain("Searched (1): `***`");
     expect(body).not.toContain("sk-123");
     expect(body).not.toContain("ghs_456");
+    expect(JSON.stringify(readSavedReview(body))).not.toMatch(/sk-123|ghs_456/);
+  });
+
+  test("redacts a secret JSON would escape from the saved review", () => {
+    const formatter = new ReviewCommentFormatter(pr, {
+      secrets: ['pa"ss\\word'],
+    });
+    const body = formatter.review(
+      review([finding("high", 'Found pa"ss\\word in the env.')]),
+    );
+    expect(readSavedReview(body)?.result.findings[0]?.explanation).toBe(
+      "Found *** in the env.",
+    );
   });
 
   test("fully redacts a secret that contains another", () => {
@@ -223,6 +241,60 @@ describe("ReviewCommentFormatter.review", () => {
     expect(body.match(/<details/g)).toHaveLength(1);
     expect(body.match(/<\/details>/g)).toHaveLength(1);
     expect(body).toEndWith("</sub>");
+    expect(readSavedReview(body)).toBeUndefined();
+  });
+});
+
+describe("ReviewCommentFormatter saved review", () => {
+  const triggered: PullRequestContext = {
+    ...run,
+    triggerTime: "2026-10-02T10:00:00Z",
+  };
+
+  test("saves the review, with its warnings, for a later description re-check", () => {
+    const formatter = new ReviewCommentFormatter(triggered);
+    formatter.addWarning("Large change.");
+    const result = review([finding("low", "Claims a cache.", "description")]);
+
+    const expected: SavedReview = {
+      version: 1,
+      headSha: "abc1234def",
+      descriptionAt: "2026-10-02T10:00:00Z",
+      warnings: ["Large change."],
+      result: result,
+    };
+    expect(readSavedReview(formatter.review(result))).toEqual(expected);
+  });
+
+  test("renders a re-checked review from what was saved, beside the re-check's stats", () => {
+    const saved: SavedReview = {
+      version: 1,
+      headSha: "fedcba98765",
+      warnings: ["Large change."],
+      result: review([]),
+    };
+    const body = new ReviewCommentFormatter(triggered).savedReview(saved, {
+      recheck: {
+        durationMs: 12_000,
+        toolCalls: 3,
+      },
+    });
+
+    expect(body).toContain("> [!WARNING]\n> Large change.");
+    expect(body).toContain("✅ **All good**");
+    expect(body).toContain(
+      "<sub>Reviewed fedcba9 · 5s · 1 tool call · description re-checked in 12s · 3 tool calls [run]",
+    );
+    expect(readSavedReview(body)).toEqual(saved);
+  });
+
+  test("leaves the saved review out when it would push the comment past GitHub's limit", () => {
+    const body = new ReviewCommentFormatter(triggered).review(
+      review([finding("high", "x".repeat(40_000))]),
+    );
+    expect(body).toEndWith("</sub>");
+    expect(body.length).toBeLessThan(65_000);
+    expect(readSavedReview(body)).toBeUndefined();
   });
 });
 

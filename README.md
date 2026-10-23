@@ -71,12 +71,12 @@ name: Review
 
 on:
   pull_request:
-    # edited covers a retargeted base; other edits are skipped below.
+    # edited covers a retargeted base, and title or body edits for the description re-check.
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
 concurrency:
-  # A title or body edit gets its own group so it can't cancel a running review.
-  group: review-${{ github.event.action == 'edited' && !github.event.changes.base && github.run_id || github.event.pull_request.number }}
+  # Title and body edits get a group of their own, so a re-check can't cancel a review of the code.
+  group: review-${{ github.event.pull_request.number }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -86,7 +86,7 @@ permissions:
 jobs:
   review:
     # Fork PRs don't get secrets, so there's nothing to authenticate with.
-    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository && (github.event.action != 'edited' || github.event.changes.base) }}
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -132,6 +132,11 @@ dropped and why, and the files the reviewer read.
 
 On a PR, the reviewer also sees the title, description, labels, comments and reviews, sanitized
 before they reach the prompt. It treats the description as the author's claims, not as proof.
+
+Editing only the title or description doesn't review the code again. If the last review found
+that the description doesn't match the diff, diffcop re-checks just the description and updates
+those findings in the comment, keeping the rest of the review. Otherwise it stops without calling
+the model. A retargeted base, or a push, still gets a full review.
 
 ## Contributing
 

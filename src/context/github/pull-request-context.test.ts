@@ -78,6 +78,47 @@ describe("readPullRequestContext", () => {
     });
   });
 
+  test.each([
+    [{ body: { from: "Old" } }, true],
+    [{}, true],
+    [
+      {
+        title: { from: "Old" },
+        body: { from: "Old" },
+      },
+      true,
+    ],
+    [{ base: { ref: { from: "develop" } } }, false],
+    [
+      {
+        title: { from: "Old" },
+        base: { ref: { from: "develop" } },
+      },
+      false,
+    ],
+  ])(
+    "marks an edit of %j as a description edit: %p",
+    async (changes, edited) => {
+      const path = await writeEvent("edited.json", {
+        action: "edited",
+        changes: changes,
+        pull_request: {
+          number: 7,
+          title: "Add a thing",
+          body: "New",
+          updated_at: "2026-10-02T10:00:00Z",
+          head: { sha: "abc1234def" },
+        },
+      });
+      const context = await readPullRequestContext({
+        GITHUB_ACTIONS: "true",
+        GITHUB_EVENT_PATH: path,
+        GITHUB_REPOSITORY: "owner/repo",
+      });
+      expect(context?.descriptionEdited).toBe(edited);
+    },
+  );
+
   test("returns undefined outside GitHub Actions", async () => {
     expect(await readPullRequestContext({})).toBeUndefined();
   });
