@@ -356,3 +356,61 @@ describe("StickyComment", () => {
     expect(sticky(pr, fetch).location).toBe("owner/repo#7");
   });
 });
+
+describe("StickyComment.rewrite", () => {
+  test("rewrites the comment for the run that claimed it, not the current run", async () => {
+    const { calls, fetch } = fakeGitHub([
+      [
+        {
+          id: 500,
+          body: `${diffcopComment("41")}\nold`,
+        },
+      ],
+    ]);
+    const seen: string[] = [];
+    const written = await sticky(run, fetch).rewrite((body) => {
+      seen.push(body);
+      return "new";
+    });
+    expect(written).toBe(true);
+    expect(seen).toEqual([`${diffcopComment("41")}\nold`]);
+    expect(calls.at(-1)).toMatchObject({
+      method: "PATCH",
+      url: "https://api.github.test/repos/owner/repo/issues/comments/500",
+      body: { body: "<!-- diffcop:review -->\n<!-- diffcop:run=41 -->\nnew" },
+    });
+  });
+
+  test("leaves the comment alone when the update declines", async () => {
+    const { calls, fetch } = fakeGitHub([
+      [
+        {
+          id: 500,
+          body: diffcopComment("41"),
+        },
+      ],
+    ]);
+    const written = await sticky(run, fetch).rewrite(() => {
+      return undefined;
+    });
+    expect(written).toBe(false);
+    expect(
+      calls.filter(({ method }) => {
+        return method !== "GET";
+      }),
+    ).toEqual([]);
+  });
+
+  test("creates nothing when there's no comment to rewrite", async () => {
+    const { calls, fetch } = fakeGitHub([[]]);
+    const written = await sticky(run, fetch).rewrite(() => {
+      return "new";
+    });
+    expect(written).toBe(false);
+    expect(
+      calls.filter(({ method }) => {
+        return method !== "GET";
+      }),
+    ).toEqual([]);
+  });
+});

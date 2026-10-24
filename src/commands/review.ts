@@ -19,6 +19,11 @@ import { StickyComment } from "@/reporter/github/sticky-comment";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
 import { CodeReviewer } from "@/review/code-reviewer";
+import { DescriptionRechecker } from "@/review/description-rechecker";
+import type { RecheckOutcome } from "@/review/description-rechecker";
+import { FindAndVerify } from "@/review/find-and-verify";
+import { isDescriptionFinding } from "@/review/saved-review";
+import { SavedReviewComment } from "@/reporter/github/saved-review-comment";
 
 const REPORTERS = ["console", "json", "github"] as const;
 
@@ -59,10 +64,9 @@ function createPullRequestSource(
   return new PullRequestFetcher(pr, github);
 }
 
-function createGitHubReporter(
+function createGitHubComment(
   pr: PullRequestContext | undefined,
   github: GitHubClient | undefined,
-  debug: boolean,
 ) {
   if (!pr) {
     throw new Error(
@@ -74,9 +78,9 @@ function createGitHubReporter(
       "--reporter github needs GITHUB_TOKEN or GH_TOKEN to post the review.",
     );
   }
-  return new GitHubReporter(
-    new StickyComment(pr, github),
-    new ReviewCommentFormatter(pr, {
+  return {
+    comment: new StickyComment(pr, github),
+    formatter: new ReviewCommentFormatter(pr, {
       secrets: [
         process.env.GITHUB_TOKEN,
         process.env.GH_TOKEN,
@@ -84,9 +88,18 @@ function createGitHubReporter(
         process.env.CLAUDE_CODE_OAUTH_TOKEN,
       ],
     }),
-    process.stderr,
-    { debug: debug },
-  );
+  };
+}
+
+function createGitHubReporter(
+  pr: PullRequestContext | undefined,
+  github: GitHubClient | undefined,
+  debug: boolean,
+) {
+  const { comment, formatter } = createGitHubComment(pr, github);
+  return new GitHubReporter(comment, formatter, process.stderr, {
+    debug: debug,
+  });
 }
 
 function createReporter(
@@ -105,6 +118,17 @@ function createReporter(
       return new JsonReporter(process.stdout);
     case "github":
       return createGitHubReporter(pr, github, debug);
+  }
+}
+
+function recheckLine(outcome: RecheckOutcome) {
+  switch (outcome.status) {
+    case "skipped":
+      return `Skipped the description re-check: ${outcome.reason}.`;
+    case "superseded":
+      return "A newer review or re-check replaced the comment first; leaving it alone.";
+    case "rechecked":
+      return `Re-checked the description: ${outcome.findings} finding${outcome.findings === 1 ? "" : "s"} left.`;
   }
 }
 
@@ -187,20 +211,16 @@ export default defineCommand({
       args.debug === true,
     );
 
-    const reviewer = new CodeReviewer(
-      new ReviewContextCollector(
-        new GitRepository(args.cwd),
-        createPullRequestSource(pr, github),
-      ),
-      new ReviewPromptBuilder(),
-      new ClaudeCodeReviewerAgent({
-        model: args.model,
-        maxTurns: maxTurns,
-        effort: args.effort,
-      }),
-      reporter,
-      sizeLimit,
+    const collector = new ReviewContextCollector(
+      new GitRepository(args.cwd),
+      createPullRequestSource(pr, github),
     );
+    const promptBuilder = new ReviewPromptBuilder();
+    const agent = new ClaudeCodeReviewerAgent({
+      model: args.model,
+      maxTurns: maxTurns,
+      effort: args.effort,
+    });
 
     // Actions sends SIGINT, then SIGTERM, when a job is cancelled or times out.
     const abort = new AbortController();
@@ -211,10 +231,80 @@ export default defineCommand({
       abort.abort();
     });
 
-    await reviewer.review({
+    // Never posts a status: a failed or cancelled re-check leaves the last review showing.
+    async function recheckDescription(
+      edited: PullRequestContext,
+      editedCollector: ReviewContextCollector,
+    ) {
+      const { comment, formatter } = createGitHubComment(edited, github);
+      const rechecker = new DescriptionRechecker(
+        editedCollector,
+        promptBuilder,
+        new FindAndVerify(promptBuilder, agent, reporter),
+        new SavedReviewComment(comment, formatter),
+      );
+      const outcome = await rechecker.recheck(
+        {
+          headSha: edited.headSha,
+          descriptionAt: edited.triggerTime,
+        },
+        {
+          base: args.base,
+          abortSignal: abort.signal,
+        },
+      );
+      process.stderr.write(`${recheckLine(outcome)}\n`);
+    }
+
+    if (args.reporter === "github" && pr?.descriptionEdited) {
+      await recheckDescription(pr, collector);
+      return;
+    }
+
+    const reviewer = new CodeReviewer(
+      collector,
+      promptBuilder,
+      agent,
+      reporter,
+      sizeLimit,
+    );
+    const result = await reviewer.review({
       request: args.prompt,
       base: args.base,
       abortSignal: abort.signal,
     });
+
+    // An edit made while the review ran found no saved review to re-check and skipped.
+    if (
+      args.reporter !== "github" ||
+      !pr ||
+      !github ||
+      !result.findings.some(isDescriptionFinding)
+    ) {
+      return;
+    }
+    try {
+      const edited = await new PullRequestFetcher(
+        pr,
+        github,
+      ).editedSinceEvent();
+      if (edited) {
+        process.stderr.write(
+          "The title or description changed during the review; re-checking it.\n",
+        );
+        await recheckDescription(
+          edited,
+          new ReviewContextCollector(
+            new GitRepository(args.cwd),
+            new PullRequestFetcher(edited, github),
+          ),
+        );
+      }
+    } catch (error) {
+      // The review is posted; a failed re-check shouldn't fail its run.
+      process.stderr.write(
+        `Couldn't re-check the edited description: ${String(error)}\n`,
+      );
+    }
   },
 });

@@ -1,20 +1,11 @@
-import { mergeExplored } from "@/agent/explored";
-import { sumStats } from "@/agent/reviewer-agent";
 import type { ReviewerAgent } from "@/agent/reviewer-agent";
-import type {
-  ReviewContext,
-  ReviewContextCollector,
-} from "@/context/review-context-collector";
+import type { ReviewContextCollector } from "@/context/review-context-collector";
 import { toError } from "@/util/errors";
 import type { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { staleBaseWarning } from "@/review/change-size-limit";
 import type { ChangeSizeLimit } from "@/review/change-size-limit";
-import {
-  findingsSchema,
-  splitByVerdict,
-  verdictsSchema,
-} from "@/review/findings";
+import { FindAndVerify } from "@/review/find-and-verify";
 import type { ReviewResult } from "@/review/findings";
 
 export interface ReviewRequest {
@@ -23,12 +14,11 @@ export interface ReviewRequest {
   abortSignal?: AbortSignal;
 }
 
-// Modeled on claude-code-action's context → prompt → agent pipeline, with a
-// second pass that tries to refute each finding before it's reported.
+// Modeled on claude-code-action's context → prompt → agent pipeline.
 export class CodeReviewer {
   readonly #collector: ReviewContextCollector;
   readonly #promptBuilder: ReviewPromptBuilder;
-  readonly #agent: ReviewerAgent;
+  readonly #findAndVerify: FindAndVerify;
   readonly #reporter: ReviewReporter;
   readonly #sizeLimit: ChangeSizeLimit;
 
@@ -41,7 +31,7 @@ export class CodeReviewer {
   ) {
     this.#collector = collector;
     this.#promptBuilder = promptBuilder;
-    this.#agent = agent;
+    this.#findAndVerify = new FindAndVerify(promptBuilder, agent, reporter);
     this.#reporter = reporter;
     this.#sizeLimit = sizeLimit;
   }
@@ -63,7 +53,11 @@ export class CodeReviewer {
       if (sizeWarning) {
         await this.#reporter.warning(sizeWarning);
       }
-      const result = await this.#findAndVerify(context, request, abortSignal);
+      const result = await this.#findAndVerify.run(
+        context,
+        this.#promptBuilder.build(context, request),
+        { abortSignal: abortSignal },
+      );
       await this.#reporter.completed(result);
       return result;
     } catch (error) {
@@ -72,49 +66,5 @@ export class CodeReviewer {
       });
       throw error;
     }
-  }
-
-  async #findAndVerify(
-    context: ReviewContext,
-    request: string,
-    abortSignal: AbortSignal | undefined,
-  ): Promise<ReviewResult> {
-    const found = await this.#agent.run({
-      cwd: context.repoRoot,
-      prompt: this.#promptBuilder.build(context, request),
-      output: findingsSchema,
-      reporter: this.#reporter,
-      abortSignal: abortSignal,
-    });
-    const { summary, findings } = found.output;
-    if (findings.length === 0) {
-      return {
-        summary: summary,
-        findings: findings,
-        dropped: [],
-        explored: found.explored,
-        stats: found.stats,
-      };
-    }
-
-    await this.#reporter.verifying(findings.length);
-    const verified = await this.#agent.run({
-      cwd: context.repoRoot,
-      prompt: this.#promptBuilder.buildVerification(context, findings),
-      output: verdictsSchema,
-      reporter: this.#reporter,
-      abortSignal: abortSignal,
-    });
-    const { confirmed, dropped } = splitByVerdict(
-      findings,
-      verified.output.verdicts,
-    );
-    return {
-      summary: summary,
-      findings: confirmed,
-      dropped: dropped,
-      explored: mergeExplored(found.explored, verified.explored),
-      stats: sumStats(found.stats, verified.stats),
-    };
   }
 }

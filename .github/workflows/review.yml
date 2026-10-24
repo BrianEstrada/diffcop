@@ -4,10 +4,12 @@ name: Review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # edited covers a retargeted base, and title or body edits for the description re-check.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 concurrency:
-  group: review-${{ github.event.pull_request.number }}
+  # Title and body edits get a group of their own, so a re-check can't cancel a review of the code.
+  group: review-${{ github.event.pull_request.number }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
   cancel-in-progress: true
 
 permissions:

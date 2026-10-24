@@ -9,6 +9,8 @@ export interface PullRequestContext {
   title: string;
   body: string;
   action?: string;
+  // An edit of the title or body alone: the code the last review saw is unchanged.
+  descriptionEdited?: boolean;
   // Comments and reviews created or edited from this time on are left out.
   triggerTime?: string;
   runId?: string;
@@ -17,6 +19,8 @@ export interface PullRequestContext {
 
 const pullRequestEvent = z.object({
   action: z.string().optional(),
+  // Only on `edited`: the fields the edit changed.
+  changes: z.record(z.string(), z.unknown()).optional(),
   pull_request: z.object({
     number: z.number(),
     title: z.string(),
@@ -39,6 +43,11 @@ function triggerTime(
   return pullRequest.updated_at ?? pullRequest.created_at;
 }
 
+// GitHub lists only title, body and base. A retargeted base changes the diff, so it still needs a full review.
+function isDescriptionEdit(changes: Record<string, unknown> = {}) {
+  return !("base" in changes);
+}
+
 export async function readPullRequestContext(
   env: Record<string, string | undefined> = process.env,
 ): Promise<PullRequestContext | undefined> {
@@ -59,7 +68,7 @@ export async function readPullRequestContext(
     return undefined;
   }
 
-  const { action, pull_request: pullRequest } = event.data;
+  const { action, changes, pull_request: pullRequest } = event.data;
   const runId = env.GITHUB_RUN_ID;
   const serverUrl = env.GITHUB_SERVER_URL ?? "https://github.com";
   let runUrl: string | undefined;
@@ -74,6 +83,9 @@ export async function readPullRequestContext(
     title: pullRequest.title,
     body: pullRequest.body ?? "",
     action: action,
+    ...(action === "edited" && {
+      descriptionEdited: isDescriptionEdit(changes),
+    }),
     triggerTime: triggerTime(action, pullRequest),
     runId: runId,
     runUrl: runUrl,
