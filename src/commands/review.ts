@@ -22,6 +22,7 @@ import { CodeReviewer } from "@/review/code-reviewer";
 import { DescriptionRechecker } from "@/review/description-rechecker";
 import type { RecheckOutcome } from "@/review/description-rechecker";
 import { FindAndVerify } from "@/review/find-and-verify";
+import { isDescriptionFinding } from "@/review/saved-review";
 import { SavedReviewComment } from "@/reporter/github/saved-review-comment";
 
 const REPORTERS = ["console", "json", "github"] as const;
@@ -231,22 +232,29 @@ export default defineCommand({
     });
 
     // Never posts a status: a failed or cancelled re-check leaves the last review showing.
-    if (args.reporter === "github" && pr?.descriptionEdited) {
-      const { comment, formatter } = createGitHubComment(pr, github);
+    async function recheckDescription(
+      edited: PullRequestContext,
+      editedCollector: ReviewContextCollector,
+    ) {
+      const { comment, formatter } = createGitHubComment(edited, github);
       const rechecker = new DescriptionRechecker(
-        collector,
+        editedCollector,
         promptBuilder,
         new FindAndVerify(promptBuilder, agent, reporter),
         new SavedReviewComment(comment, formatter),
       );
       const outcome = await rechecker.recheck(
         {
-          headSha: pr.headSha,
-          descriptionAt: pr.triggerTime,
+          headSha: edited.headSha,
+          descriptionAt: edited.triggerTime,
         },
         { abortSignal: abort.signal },
       );
       process.stderr.write(`${recheckLine(outcome)}\n`);
+    }
+
+    if (args.reporter === "github" && pr?.descriptionEdited) {
+      await recheckDescription(pr, collector);
       return;
     }
 
@@ -257,10 +265,43 @@ export default defineCommand({
       reporter,
       sizeLimit,
     );
-    await reviewer.review({
+    const result = await reviewer.review({
       request: args.prompt,
       base: args.base,
       abortSignal: abort.signal,
     });
+
+    // An edit made while the review ran found no saved review to re-check and skipped.
+    if (
+      args.reporter !== "github" ||
+      !pr ||
+      !github ||
+      !result.findings.some(isDescriptionFinding)
+    ) {
+      return;
+    }
+    try {
+      const edited = await new PullRequestFetcher(
+        pr,
+        github,
+      ).editedSinceEvent();
+      if (edited) {
+        process.stderr.write(
+          "The title or description changed during the review; re-checking it.\n",
+        );
+        await recheckDescription(
+          edited,
+          new ReviewContextCollector(
+            new GitRepository(args.cwd),
+            new PullRequestFetcher(edited, github),
+          ),
+        );
+      }
+    } catch (error) {
+      // The review is posted; a failed re-check shouldn't fail its run.
+      process.stderr.write(
+        `Couldn't re-check the edited description: ${String(error)}\n`,
+      );
+    }
   },
 });

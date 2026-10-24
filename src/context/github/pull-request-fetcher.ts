@@ -65,6 +65,27 @@ const queryResult = z.object({
   }),
 });
 
+const DESCRIPTION_QUERY = `
+  query($owner: String!, $repo: String!, $number: Int!) {
+    repository(owner: $owner, name: $repo) {
+      pullRequest(number: $number) { title body headRefOid updatedAt }
+    }
+  }
+`;
+
+const descriptionResult = z.object({
+  repository: z.object({
+    pullRequest: z
+      .object({
+        title: z.string(),
+        body: z.string(),
+        headRefOid: z.string(),
+        updatedAt: z.string(),
+      })
+      .nullable(),
+  }),
+});
+
 interface Timestamps {
   updatedAt?: string;
   lastEditedAt?: string | null;
@@ -100,15 +121,8 @@ export class PullRequestFetcher implements PullRequestSource {
 
   async fetch(): Promise<PullRequestData> {
     const { repo, number, action, title, body, triggerTime } = this.#pr;
-    const [owner = "", name = ""] = repo.split("/");
     const result = unwrapResponse(
-      queryResult.safeParse(
-        await this.#github.graphql<unknown>(PR_QUERY, {
-          owner: owner,
-          repo: name,
-          number: number,
-        }),
-      ),
+      queryResult.safeParse(await this.#query(PR_QUERY)),
       "GitHub's pull request query",
     );
     const pullRequest = result.repository.pullRequest;
@@ -145,5 +159,39 @@ export class PullRequestFetcher implements PullRequestSource {
       },
       reviews: { nodes: reviews },
     };
+  }
+
+  // The context an `edited` event would give now, or undefined if the title and body are still the event's.
+  async editedSinceEvent(): Promise<PullRequestContext | undefined> {
+    const { repo, number, title, body } = this.#pr;
+    const result = unwrapResponse(
+      descriptionResult.safeParse(await this.#query(DESCRIPTION_QUERY)),
+      "GitHub's pull request description query",
+    );
+    const pullRequest = result.repository.pullRequest;
+    if (!pullRequest) {
+      throw new Error(`Pull request ${repo}#${number} not found.`);
+    }
+    if (pullRequest.title === title && pullRequest.body === body) {
+      return undefined;
+    }
+    return {
+      ...this.#pr,
+      headSha: pullRequest.headRefOid,
+      title: pullRequest.title,
+      body: pullRequest.body,
+      action: "edited",
+      descriptionEdited: true,
+      triggerTime: pullRequest.updatedAt,
+    };
+  }
+
+  #query(query: string) {
+    const [owner = "", name = ""] = this.#pr.repo.split("/");
+    return this.#github.graphql<unknown>(query, {
+      owner: owner,
+      repo: name,
+      number: this.#pr.number,
+    });
   }
 }

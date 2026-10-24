@@ -185,3 +185,61 @@ describe("PullRequestFetcher", () => {
     expect(fetcher.fetch()).rejects.toThrow("repository.pullRequest.labels");
   });
 });
+
+describe("PullRequestFetcher.editedSinceEvent", () => {
+  const current = {
+    title: "Title from the event",
+    body: "Body from the event",
+    headRefOid: "abc1234def",
+    updatedAt: "2026-10-02T10:05:00Z",
+  };
+
+  test("is undefined while the title and body are still the event's", async () => {
+    const { fetcher } = fakeGraphQL({
+      repository: { pullRequest: current },
+    });
+    expect(await fetcher.editedSinceEvent()).toBeUndefined();
+  });
+
+  test("gives the context an edited event would, for an edit made after the event", async () => {
+    const { fetcher } = fakeGraphQL({
+      repository: {
+        pullRequest: {
+          ...current,
+          body: "Body edited later",
+          headRefOid: "def5678abc",
+        },
+      },
+    });
+    expect(await fetcher.editedSinceEvent()).toEqual({
+      ...pr,
+      headSha: "def5678abc",
+      body: "Body edited later",
+      action: "edited",
+      descriptionEdited: true,
+      triggerTime: "2026-10-02T10:05:00Z",
+    });
+  });
+
+  test("counts a title edit", async () => {
+    const { fetcher } = fakeGraphQL({
+      repository: {
+        pullRequest: {
+          ...current,
+          title: "Title edited later",
+        },
+      },
+    });
+    expect(await fetcher.editedSinceEvent()).toMatchObject({
+      title: "Title edited later",
+      body: "Body from the event",
+    });
+  });
+
+  test("throws when the PR isn't found", async () => {
+    const { fetcher } = fakeGraphQL({ repository: { pullRequest: null } });
+    expect(fetcher.editedSinceEvent()).rejects.toThrow(
+      "Pull request owner/repo#7 not found.",
+    );
+  });
+});
