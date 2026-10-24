@@ -136,8 +136,8 @@ before they reach the prompt. It treats the description as the author's claims, 
 Editing only the title or description doesn't review the code again. If the last review found
 that the description doesn't match the diff, diffcop re-checks just the description and updates
 those findings in the comment, keeping the rest of the review. Otherwise it stops without calling
-the model. An edit made while a review is running is re-checked when that review finishes. A
-retargeted base, or a push, still gets a full review.
+the model. An edit made while a review is running gets the same treatment when that review
+finishes. A retargeted base, or a push, still gets a full review.
 
 ## Contributing
 
