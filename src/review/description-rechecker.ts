@@ -51,7 +51,7 @@ export class DescriptionRechecker {
 
   async recheck(
     { headSha, descriptionAt }: DescriptionEdit,
-    { abortSignal }: { abortSignal?: AbortSignal } = {},
+    { base, abortSignal }: { base?: string; abortSignal?: AbortSignal } = {},
   ): Promise<RecheckOutcome> {
     const saved = await this.#store.load();
     if (!saved) {
@@ -74,7 +74,7 @@ export class DescriptionRechecker {
       };
     }
 
-    const context = await this.#collector.collect();
+    const context = await this.#collector.collect(base);
     const rechecked = await this.#findAndVerify.run(
       context,
       this.#promptBuilder.buildDescriptionRecheck(context, previous),

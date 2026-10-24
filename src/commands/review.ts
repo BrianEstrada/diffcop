@@ -248,7 +248,10 @@ export default defineCommand({
           headSha: edited.headSha,
           descriptionAt: edited.triggerTime,
         },
-        { abortSignal: abort.signal },
+        {
+          base: args.base,
+          abortSignal: abort.signal,
+        },
       );
       process.stderr.write(`${recheckLine(outcome)}\n`);
     }

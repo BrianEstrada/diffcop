@@ -12,6 +12,8 @@ import type { Finding, Scope } from "@/review/findings";
 import type { SavedReview } from "@/review/saved-review";
 
 class FakeRepository implements Repository {
+  readonly mergeBases: string[] = [];
+
   async root() {
     return "/repo";
   }
@@ -20,7 +22,8 @@ class FakeRepository implements Repository {
     return "main";
   }
 
-  async mergeBase() {
+  async mergeBase(base: string) {
+    this.mergeBases.push(base);
     return "abc123";
   }
 
@@ -186,10 +189,14 @@ const edit = {
   descriptionAt: "2026-10-02T11:00:00Z",
 };
 
-function rechecker(agent: ReviewerAgent, store: SavedReviewStore) {
+function rechecker(
+  agent: ReviewerAgent,
+  store: SavedReviewStore,
+  repository = new FakeRepository(),
+) {
   const promptBuilder = new ReviewPromptBuilder();
   return new DescriptionRechecker(
-    new ReviewContextCollector(new FakeRepository(), {
+    new ReviewContextCollector(repository, {
       fetch: async () => {
         return pullRequest;
       },
@@ -253,6 +260,23 @@ describe("DescriptionRechecker", () => {
     expect(content[0]).toContain("Adds a cache in front of the API.");
     expect(content[1]).toContain(staleClaim.title);
     expect(content[1]).not.toContain(bug.title);
+  });
+
+  test("diffs against the base the review was given", async () => {
+    const repository = new FakeRepository();
+
+    await rechecker(
+      new FakeAgent([
+        {
+          summary: "",
+          findings: [],
+        },
+      ]),
+      new MemoryStore(saved()),
+      repository,
+    ).recheck(edit, { base: "origin/release" });
+
+    expect(repository.mergeBases).toEqual(["origin/release"]);
   });
 
   test("swaps in the verified description findings and keeps the code findings as reviewed", async () => {
