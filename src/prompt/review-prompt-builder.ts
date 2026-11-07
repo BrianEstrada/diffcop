@@ -20,6 +20,7 @@ const DEFAULT_MAX_DIFF_CHARS = 200_000;
 const FINDER_INSTRUCTIONS = `You are reviewing a change in a local git repository, with read-only access: use Read, Glob and Grep, and never modify files.
 The repository context and diff are in the first message; the user's request follows it.
 Find as many real bugs as you can, following the change into any code it could break. Report a bug you suspect even if you can't fully prove it.
+Don't stop after the first few findings: keep going until you've either reported a finding in every changed file or checked it and found nothing.
 The PR description and commit messages show intent, not correctness: a claim that code is safe, tested or unchanged in behavior never rules out a bug.
 You may also report nits on changed lines. Skip style a formatter or linter enforces, "add tests" filler and anything in generated or lock files.`;
 
