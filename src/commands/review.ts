@@ -9,7 +9,10 @@ import { readPullRequestContext } from "@/context/github/pull-request-context";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
 import { PullRequestFetcher } from "@/context/github/pull-request-fetcher";
 import { ReviewContextCollector } from "@/context/review-context-collector";
-import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
+import {
+  FINDER_LENSES,
+  ReviewPromptBuilder,
+} from "@/prompt/review-prompt-builder";
 import { ConsoleReporter } from "@/reporter/console/console-reporter";
 import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
@@ -178,6 +181,10 @@ export default defineCommand({
       options: [...EFFORTS],
       description: "How hard the model thinks (default: Claude Code's)",
     },
+    finders: {
+      type: "string",
+      description: `Finders to run in parallel, each with its own focus, from 1 (one generalist) to ${FINDER_LENSES.length} (default: one per 400 changed lines)`,
+    },
     reporter: {
       type: "enum",
       options: [...REPORTERS],
@@ -196,6 +203,15 @@ export default defineCommand({
     let maxTurns: number | undefined;
     if (args.maxTurns !== undefined) {
       maxTurns = parsePositiveInt("maxTurns", args.maxTurns);
+    }
+    let finders: number | undefined;
+    if (args.finders !== undefined) {
+      finders = parsePositiveInt("finders", args.finders);
+    }
+    if (finders !== undefined && finders > FINDER_LENSES.length) {
+      throw new Error(
+        `--finders can be at most ${FINDER_LENSES.length}, not ${finders}.`,
+      );
     }
     const sizeLimit = new ChangeSizeLimit({
       maxLines: parsePositiveInt("maxLines", args.maxLines),
@@ -271,6 +287,7 @@ export default defineCommand({
     const result = await reviewer.review({
       request: args.prompt,
       base: args.base,
+      finders: finders,
       abortSignal: abort.signal,
     });
 

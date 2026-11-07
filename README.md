@@ -48,6 +48,7 @@ diffcop review "focus on error handling"
 diffcop review "review this code" --base origin/develop   # default: origin/HEAD, then main
 diffcop review "review this code" --cwd ../other-repo
 diffcop review "quick pass" --effort low                  # faster, shallower review
+diffcop review "review this code" --finders 1             # one finder, whatever the diff's size
 diffcop review "review this code" --reporter json | jq .findings
 ```
 
@@ -126,8 +127,10 @@ keep `--ignore-scripts`.
 ## How a review works
 
 The first pass looks for bugs the diff introduced, plus a few nits, and on a PR checks that the
-description matches the code. A second, fresh session then tries to disprove each finding, and
-only what survives is reported.
+description matches the code. A larger diff gets more finders in parallel, one per 400 changed
+lines up to four, each focused on one area: state and timing, inputs and failures, callers and
+context, or consistency with the repository. Their findings are merged, and a fresh session then
+tries to disprove each one. Only what survives is reported.
 
 The review opens with one headline:
 

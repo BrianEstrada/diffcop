@@ -3,10 +3,14 @@ import type { Explored } from "@/agent/explored";
 import type { AgentRun, ReviewerAgent, RunStats } from "@/agent/reviewer-agent";
 import type { ChangedFile, Repository } from "@/context/repository";
 import { ReviewContextCollector } from "@/context/review-context-collector";
-import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
+import {
+  FINDER_LENSES,
+  ReviewPromptBuilder,
+} from "@/prompt/review-prompt-builder";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
-import { CodeReviewer } from "@/review/code-reviewer";
+import { CodeReviewer, finderCount } from "@/review/code-reviewer";
+import { verificationBatches } from "@/review/find-and-verify";
 import type { Finding, ReviewResult } from "@/review/findings";
 
 class FakeRepository implements Repository {
@@ -67,6 +71,14 @@ const runStats: RunStats = {
   inputTokens: 100,
   costUsd: 0.25,
 };
+
+// Each review reads the clock twice, so it measures `elapsedMs` of wall time.
+function clock(elapsedMs: number) {
+  let reads = 0;
+  return () => {
+    return reads++ % 2 === 0 ? 0 : elapsedMs;
+  };
+}
 
 // Each run reads one shared file and one of its own.
 function explored(run: number): Explored {
@@ -133,6 +145,7 @@ function createReviewer(
   agent: ReviewerAgent,
   reporter: ReviewReporter,
   changedFiles: ChangedFile[] = [],
+  elapsedMs = runStats.durationMs,
 ) {
   return new CodeReviewer(
     new ReviewContextCollector(new FakeRepository(changedFiles)),
@@ -143,6 +156,7 @@ function createReviewer(
       maxLines: 100,
       maxFiles: 2,
     }),
+    clock(elapsedMs),
   );
 }
 
@@ -220,7 +234,7 @@ describe("CodeReviewer", () => {
     ]);
     const reporter = new RecordingReporter();
 
-    const reviewed = await createReviewer(agent, reporter).review({
+    const reviewed = await createReviewer(agent, reporter, [], 2_000).review({
       request: "x",
     });
 
@@ -407,5 +421,213 @@ describe("CodeReviewer", () => {
       }),
     ).rejects.toThrow("aborted");
     expect(reporter.events.at(-1)?.[2]).toEqual({ cancelled: true });
+  });
+
+  test("runs one finder per lens in parallel and verifies their pooled findings", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "Traced state.",
+        findings: [finding("A")],
+      },
+      {
+        summary: "Traced inputs.",
+        findings: [finding("B")],
+      },
+      {
+        summary: "",
+        findings: [],
+      },
+      { duplicates: [] },
+      {
+        verdicts: [
+          {
+            id: 1,
+            verdict: "confirmed",
+            reason: "Fails.",
+          },
+          {
+            id: 2,
+            verdict: "confirmed",
+            reason: "Fails.",
+          },
+        ],
+      },
+    ]);
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+    ).review({
+      request: "x",
+      finders: 3,
+    });
+
+    const finders = agent.runs.slice(0, 3);
+    finders.forEach((run, index) => {
+      expect(run.prompt.instructions).toContain(
+        `Yours is ${FINDER_LENSES[index]?.name}:`,
+      );
+    });
+    expect(agent.runs[4]?.prompt.content[1]).toContain('"title": "B"');
+    expect(reviewed.summary).toBe("Traced state. Traced inputs.");
+    expect(reviewed.findings).toEqual([finding("A"), finding("B")]);
+    expect(reviewed.stats.toolCalls).toBe(10);
+  });
+
+  test("merges the finders' duplicates before verifying", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("A")],
+      },
+      {
+        summary: "",
+        findings: [finding("A again"), finding("B")],
+      },
+      {
+        duplicates: [
+          {
+            id: 2,
+            duplicateOf: 1,
+          },
+        ],
+      },
+      { verdicts: [] },
+    ]);
+
+    await createReviewer(agent, new RecordingReporter()).review({
+      request: "x",
+      finders: 2,
+    });
+
+    const [, , merger, verifier] = agent.runs;
+    expect(merger?.prompt.instructions).toContain("without using tools");
+    expect(merger?.prompt.content[0]).toContain('"title": "A again"');
+    expect(verifier?.prompt.content[1]).not.toContain("A again");
+    expect(verifier?.prompt.content[1]).toContain('"title": "B"');
+  });
+
+  test("picks one finder per 400 changed lines, up to one per lens", () => {
+    function counted(additions: number) {
+      return finderCount([
+        {
+          path: "a.ts",
+          additions: additions,
+          deletions: 0,
+        },
+        {
+          path: "bun.lock",
+          additions: 5_000,
+          deletions: 0,
+        },
+      ]);
+    }
+
+    expect([0, 400, 401, 1_204, 10_000].map(counted)).toEqual([
+      1,
+      1,
+      2,
+      4,
+      FINDER_LENSES.length,
+    ]);
+  });
+
+  test("reports the wall time of parallel finders, not their summed durations", async () => {
+    const empty = {
+      summary: "",
+      findings: [],
+    };
+    const agent = new FakeAgent([empty, empty, empty]);
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      [],
+      1_500,
+    ).review({
+      request: "x",
+      finders: 3,
+    });
+
+    expect(reviewed.stats.durationMs).toBe(1_500);
+    expect(reviewed.stats.costUsd).toBe(0.75);
+  });
+
+  test("verifies each file's findings in a session of its own", async () => {
+    const inB: Finding = {
+      ...finding("B"),
+      file: "b.ts",
+    };
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("A"), inB],
+      },
+      {
+        verdicts: [
+          {
+            id: 1,
+            verdict: "confirmed",
+            reason: "Fails.",
+          },
+        ],
+      },
+      {
+        verdicts: [
+          {
+            id: 1,
+            verdict: "refuted",
+            reason: "Guarded.",
+          },
+        ],
+      },
+    ]);
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+    ).review({ request: "x" });
+
+    expect(agent.runs).toHaveLength(3);
+    expect(reviewed.findings).toEqual([finding("A")]);
+    expect(reviewed.dropped).toEqual([
+      {
+        finding: inB,
+        reason: "Guarded.",
+      },
+    ]);
+  });
+});
+
+describe("verificationBatches", () => {
+  function at(file: string, startLine: number): Finding {
+    return {
+      ...finding(`${file}:${startLine}`),
+      file: file,
+      startLine: startLine,
+      endLine: startLine,
+    };
+  }
+
+  test("groups by file in line order, at most five to a batch", () => {
+    const findings = [
+      at("a.ts", 9),
+      at("b.ts", 1),
+      ...[6, 5, 4, 3, 2, 1].map((line) => {
+        return at("a.ts", line);
+      }),
+    ];
+
+    expect(
+      verificationBatches(findings).map((batch) => {
+        return batch.map((f) => {
+          return f.title;
+        });
+      }),
+    ).toEqual([
+      ["a.ts:1", "a.ts:2", "a.ts:3", "a.ts:4", "a.ts:5"],
+      ["a.ts:6", "a.ts:9"],
+      ["b.ts:1"],
+    ]);
   });
 });

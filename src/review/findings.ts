@@ -46,7 +46,11 @@ export const findingsSchema = z.object({
 
 const verdictSchema = z.object({
   id: z.int().describe("The finding's id"),
-  verdict: z.enum(["confirmed", "refuted"]),
+  verdict: z.enum(["confirmed", "refuted", "duplicate"]),
+  duplicateOf: z
+    .int()
+    .optional()
+    .describe("With verdict duplicate: the id of the finding it repeats"),
   reason: z.string(),
 });
 
@@ -55,6 +59,36 @@ export type Verdict = z.infer<typeof verdictSchema>;
 export const verdictsSchema = z.object({
   verdicts: z.array(verdictSchema),
 });
+
+const duplicateSchema = z.object({
+  id: z.int().describe("The id of the finding that repeats another"),
+  duplicateOf: z.int().describe("The id of the finding it repeats"),
+});
+
+export type Duplicate = z.infer<typeof duplicateSchema>;
+
+export const duplicatesSchema = z.object({
+  duplicates: z.array(duplicateSchema),
+});
+
+// Ids are 1-based, as numberFindings gives them. A finding stays when it's
+// named the duplicate of a missing finding, of itself or of one already gone.
+export function removeDuplicates(findings: Finding[], duplicates: Duplicate[]) {
+  const removed = new Set<number>();
+  for (const { id, duplicateOf } of duplicates) {
+    const valid =
+      id !== duplicateOf &&
+      [id, duplicateOf].every((n) => {
+        return n >= 1 && n <= findings.length;
+      });
+    if (valid && !removed.has(duplicateOf)) {
+      removed.add(id);
+    }
+  }
+  return findings.filter((_, index) => {
+    return !removed.has(index + 1);
+  });
+}
 
 export interface DroppedFinding {
   finding: Finding;
@@ -100,15 +134,53 @@ function dropReason(verdicts: Verdict[]) {
   return reasons || "Refuted without a reason";
 }
 
+// The id of the other finding this one repeats, when every verdict on it says so.
+function duplicateTarget(own: Verdict[], id: number, count: number) {
+  const targets = new Set(
+    own.map((v) => {
+      return v.verdict === "duplicate" ? v.duplicateOf : undefined;
+    }),
+  );
+  const [target] = targets;
+  if (
+    own.length === 0 ||
+    targets.size !== 1 ||
+    target === undefined ||
+    target === id ||
+    target < 1 ||
+    target > count
+  ) {
+    return undefined;
+  }
+  return target;
+}
+
 // A finding needs a confirmation and no refutation, so a skipped or
-// contradictory verdict drops it.
+// contradictory verdict drops it. A duplicate is left out of both lists, its
+// original standing for it, unless that original is itself marked a duplicate.
 export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
   const confirmed: Finding[] = [];
   const dropped: DroppedFinding[] = [];
-  findings.forEach((finding, index) => {
-    const own = verdicts.filter((v) => {
+  const verdictsOf = findings.map((_, index) => {
+    return verdicts.filter((v) => {
       return v.id === index + 1;
     });
+  });
+  const targets = verdictsOf.map((own, index) => {
+    return duplicateTarget(own, index + 1, findings.length);
+  });
+  findings.forEach((finding, index) => {
+    const own = verdictsOf[index] ?? [];
+    const target = targets[index];
+    if (target !== undefined) {
+      if (targets[target - 1] !== undefined) {
+        dropped.push({
+          finding: finding,
+          reason: "Marked a duplicate of another duplicate",
+        });
+      }
+      return;
+    }
     if (own.length > 0 && own.every(isConfirmed)) {
       confirmed.push(finding);
     } else {
