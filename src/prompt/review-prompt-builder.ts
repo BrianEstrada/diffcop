@@ -46,7 +46,8 @@ Return one verdict per finding id, with a one-sentence reason.`;
 // One session's attention runs out on a large diff, so each parallel finder
 // gets a share of the files and only their diff (pr-agent, review-hog).
 const CHUNK_INSTRUCTIONS = `Several reviewers are reviewing this change at once, each given a share of the changed files. Yours are listed in <assigned_files>, and the diff block holds only their changes; <changed_files> lists the whole change.
-Review your files in depth. Follow them into any code they could break, including the other changed files, which you can Read. Report bugs in your files, and any bug elsewhere that your files cause.`;
+Review your files in depth. Follow them into any code they could break, including the other changed files, which you can Read. Report bugs in your files, and any bug elsewhere that your files cause.
+For you, "every changed file" means every file in <assigned_files>.`;
 
 // Chunk finders miss bugs that span chunks, such as a value one file sets and
 // another reads, so one finder also reviews the whole diff.

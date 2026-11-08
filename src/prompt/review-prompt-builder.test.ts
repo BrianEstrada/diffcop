@@ -83,6 +83,17 @@ describe("ReviewPromptBuilder.buildFinders", () => {
     expect(second?.prompt.content[0]).not.toContain("+a/x.ts line");
   });
 
+  test("tells a chunk's finder that every changed file means its assigned files", () => {
+    const [first] = builder.buildFinders(context, "x", 6);
+
+    expect(first?.prompt.instructions).toContain(
+      "keep going until you've either reported a finding in every changed file",
+    );
+    expect(first?.prompt.instructions).toContain(
+      'For you, "every changed file" means every file in <assigned_files>.',
+    );
+  });
+
   test("gives every chunk the whole diff when it can't be split by file", () => {
     const unsplittable: ReviewContext = {
       ...context,
