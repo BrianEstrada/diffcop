@@ -11,7 +11,7 @@ function changedLines(files: ChangedFile[]) {
   }, 0);
 }
 
-// `git diff --numstat` writes a rename as `old => new` or `dir/{old => new}/file`.
+// A rename is `old => new`. Plain `git diff --numstat`'s `dir/{old => new}/file` is still accepted.
 export function currentPath(path: string) {
   const braced = path.replace(/\{[^{}]* => ([^{}]*)\}/g, "$1");
   const [, after] = braced.split(" => ");
