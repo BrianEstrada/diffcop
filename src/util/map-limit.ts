@@ -7,9 +7,19 @@ export async function mapLimit<T, R>(
   const results: R[] = [];
   // Shared by every worker, so each item is taken exactly once.
   const pending = items.entries();
+  // Promise.all rejects on the first failure, so the other workers stop taking items.
+  let failed = false;
   async function worker() {
     for (const [index, item] of pending) {
-      results[index] = await fn(item, index);
+      if (failed) {
+        return;
+      }
+      try {
+        results[index] = await fn(item, index);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   }
   const workers = Array.from(

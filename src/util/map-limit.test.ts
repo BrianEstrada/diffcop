@@ -40,4 +40,19 @@ describe("mapLimit", () => {
       }),
     ).rejects.toThrow("boom");
   });
+
+  test("starts no new calls after one fails", async () => {
+    const started: number[] = [];
+    const run = mapLimit([0, 1, 2, 3], 2, async (item) => {
+      started.push(item);
+      if (item === 0) {
+        throw new Error("boom");
+      }
+      await Bun.sleep(5);
+      return item;
+    });
+    expect(run).rejects.toThrow("boom");
+    await Bun.sleep(30);
+    expect(started).toEqual([0, 1]);
+  });
 });
