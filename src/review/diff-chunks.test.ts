@@ -46,6 +46,7 @@ describe("sourceKey", () => {
     ["foo.js", "./foo"],
     ["__tests__/foo.js", "./foo"],
     ["pkg/foo_test.go", "pkg/foo"],
+    ["spec/models/foo_spec.rb", "spec/models/foo"],
     ["app/test_foo.py", "app/foo"],
     ["app/src/test/kotlin/FooTest.kt", "app/src/main/kotlin/Foo"],
     ["app/src/main/kotlin/Foo.kt", "app/src/main/kotlin/Foo"],

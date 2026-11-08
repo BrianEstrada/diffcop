@@ -18,7 +18,7 @@ export function currentPath(path: string) {
   return (after ?? braced).replaceAll("//", "/").replace(/^\//, "");
 }
 
-// The source file a test belongs with: `foo.test.ts`, `foo_test.go`,
+// The source file a test belongs with: `foo.test.ts`, `foo_test.go`, `foo_spec.rb`,
 // `test_foo.py`, `FooTest.kt` under src/test and `__tests__/foo.js` all key as `foo`.
 export function sourceKey(path: string) {
   const current = currentPath(path);
@@ -29,7 +29,7 @@ export function sourceKey(path: string) {
   const name = basename(current);
   const stem = (name.split(".")[0] || name)
     .replace(/^test_/, "")
-    .replace(/(_test|Tests?|Spec)$/, "");
+    .replace(/(_test|_spec|Tests?|Spec)$/, "");
   return `${dir}/${stem}`;
 }
 
