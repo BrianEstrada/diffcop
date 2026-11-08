@@ -30,6 +30,7 @@ describe("currentPath", () => {
     ["old.ts => new.ts", "new.ts"],
     ["src/{old => new}/a.ts", "src/new/a.ts"],
     ["src/{ => nested}/a.ts", "src/nested/a.ts"],
+    ["{sub => }/a.ts", "a.ts"],
   ])("%s is %s", (path, expected) => {
     expect(currentPath(path)).toBe(expected);
   });

@@ -15,7 +15,7 @@ function changedLines(files: ChangedFile[]) {
 export function currentPath(path: string) {
   const braced = path.replace(/\{[^{}]* => ([^{}]*)\}/g, "$1");
   const [, after] = braced.split(" => ");
-  return (after ?? braced).replaceAll("//", "/");
+  return (after ?? braced).replaceAll("//", "/").replace(/^\//, "");
 }
 
 // The source file a test belongs with: `foo.test.ts`, `foo_test.go`,
