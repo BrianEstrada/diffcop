@@ -81,6 +81,9 @@ describe("ReviewPromptBuilder.buildFinders", () => {
     );
     expect(second?.prompt.content[0]).toContain("+b/y.ts line");
     expect(second?.prompt.content[0]).not.toContain("+a/x.ts line");
+    expect(first?.prompt.instructions).toContain(
+      "The diff block holds only your files' changes.",
+    );
   });
 
   test("tells a chunk's finder that every changed file means its assigned files", () => {
@@ -104,6 +107,7 @@ describe("ReviewPromptBuilder.buildFinders", () => {
 
     expect(prompts[0]?.prompt.content[0]).toContain("<diff>\n+change\n</diff>");
     expect(prompts[1]?.prompt.content[0]).toContain("<diff>\n+change\n</diff>");
+    expect(prompts[0]?.prompt.instructions).not.toContain("holds only");
   });
 
   test("reviews each chunk twice, files in opposite orders", () => {
