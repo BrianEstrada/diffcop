@@ -120,7 +120,7 @@ jobs:
 The action installs Bun, Node and pnpm on the runner, so later steps in the same job see those
 versions.
 
-Install your dependencies before the action, as the example does with `npm ci`, so the reviewer can
+Install your dependencies before the action, as the example does with `pnpm ci`, so the reviewer can
 check how your code uses a library instead of guessing. Use your own package manager's command
 (`pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, …, after its setup action) and
 keep `--ignore-scripts`.
