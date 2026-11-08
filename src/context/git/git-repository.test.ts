@@ -129,6 +129,7 @@ describe("GitRepository", () => {
       await inQuoted("mv", "old.txt", "new.txt");
       await Bun.write(join(quoted, "café.txt"), "one\n");
       await Bun.write(join(quoted, 'say "hi".txt'), "two\n");
+      await Bun.write(join(quoted, "tab\tname.txt"), "three\n");
       await inQuoted("add", ".");
 
       const repository = new GitRepository(quoted);
@@ -145,6 +146,11 @@ describe("GitRepository", () => {
         },
         {
           path: 'say "hi".txt',
+          additions: 1,
+          deletions: 0,
+        },
+        {
+          path: "tab\tname.txt",
           additions: 1,
           deletions: 0,
         },

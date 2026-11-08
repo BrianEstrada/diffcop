@@ -57,9 +57,11 @@ export class GitRepository implements Repository {
     const files: ChangedFile[] = [];
     let index = 0;
     while (index < fields.length) {
-      const [additions = "0", deletions = "0", path = ""] = (
+      // Only the first two tabs separate fields; a path can hold more.
+      const [additions = "0", deletions = "0", ...pathParts] = (
         fields[index] ?? ""
       ).split("\t");
+      const path = pathParts.join("\t");
       index++;
       if (additions === "") {
         continue;
