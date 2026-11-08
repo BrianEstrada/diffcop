@@ -64,8 +64,5 @@
     "oxlint-plugin-deslopify": "0.5.0",
     "oxlint-tsgolint": "7.0.2005",
     "typescript": "7.0.2"
-  },
-  "patchedDependencies": {
-    "@ai-sdk/harness-claude-code@1.0.177": "patches/@ai-sdk%2Fharness-claude-code@1.0.177.patch"
   }
 }

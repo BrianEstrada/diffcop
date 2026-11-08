@@ -3,6 +3,9 @@ import {
   approvalRequestError,
   finishCost,
   REVIEWER_TOOLS,
+  SUBMIT_INSTRUCTION,
+  SUBMIT_REMINDER,
+  SUBMIT_TOOL,
 } from "@/agent/claude-code/claude-code-agent";
 
 describe("REVIEWER_TOOLS", () => {
@@ -46,16 +49,9 @@ describe("finishCost", () => {
   });
 });
 
-describe("Claude Code bridge", () => {
-  // patches/@ai-sdk%2Fharness-claude-code@*.patch: under "allow-reads" the bridge
-  // defers any tool it doesn't know, and the harness then denies StructuredOutput.
-  test("doesn't ask approval for StructuredOutput", async () => {
-    const bridge = await Bun.file(
-      new URL(
-        "bridge/index.mjs",
-        import.meta.resolve("@ai-sdk/harness-claude-code"),
-      ),
-    ).text();
-    expect(bridge).toContain('StructuredOutput: "readonly",');
+describe("SUBMIT_TOOL", () => {
+  test("is named in the instruction and the reminder", () => {
+    expect(SUBMIT_INSTRUCTION).toContain(SUBMIT_TOOL);
+    expect(SUBMIT_REMINDER).toContain(SUBMIT_TOOL);
   });
 });
