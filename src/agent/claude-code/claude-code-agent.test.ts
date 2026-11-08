@@ -3,6 +3,9 @@ import {
   approvalRequestError,
   finishCost,
   REVIEWER_TOOLS,
+  SUBMIT_INSTRUCTION,
+  SUBMIT_REMINDER,
+  SUBMIT_TOOL,
 } from "@/agent/claude-code/claude-code-agent";
 
 describe("REVIEWER_TOOLS", () => {
@@ -43,5 +46,12 @@ describe("finishCost", () => {
         providerMetadata: { "claude-code": { costUsd: "0.42" } },
       }).data,
     ).toBeUndefined();
+  });
+});
+
+describe("SUBMIT_TOOL", () => {
+  test("is named in the instruction and the reminder", () => {
+    expect(SUBMIT_INSTRUCTION).toContain(SUBMIT_TOOL);
+    expect(SUBMIT_REMINDER).toContain(SUBMIT_TOOL);
   });
 });

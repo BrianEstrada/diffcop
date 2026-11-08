@@ -1,6 +1,6 @@
 import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
-import { Output } from "ai";
+import { tool } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
 import { z } from "zod";
 import { ExplorationLog, explorationCall } from "@/agent/explored";
@@ -10,6 +10,7 @@ import type {
   ReviewerAgent,
   RunStats,
 } from "@/agent/reviewer-agent";
+import { sumStats } from "@/agent/reviewer-agent";
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
@@ -57,6 +58,15 @@ export function approvalRequestError(toolName: string) {
   );
 }
 
+// Claude Code's own `outputFormat` tool, StructuredOutput, waits for a host
+// approval under "allow-reads" that activeTools then denies, so the answer
+// comes back through a host tool instead, which skips approval.
+export const SUBMIT_TOOL = "submit_result";
+
+export const SUBMIT_INSTRUCTION = `When you're done, call ${SUBMIT_TOOL} once with your answer. Your text replies are not read.`;
+
+export const SUBMIT_REMINDER = `You ended without calling ${SUBMIT_TOOL}. Call it now with your answer.`;
+
 export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   readonly #options: ClaudeCodeReviewerAgentOptions;
 
@@ -73,6 +83,7 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   }: AgentRun<T>): Promise<AgentResult<T>> {
     const startedAt = performance.now();
     const port = leaseLocalPort();
+    let submitted: { answer: T } | undefined;
     const agent = new HarnessAgent({
       harness: createClaudeCode({
         maxTurns: this.#options.maxTurns,
@@ -81,15 +92,31 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
         // and endpoint explicitly.
         port: port,
         portEndpoint: { url: `ws://127.0.0.1:${port}` },
+        // Tool search would otherwise hide the tool until the model looks it up.
+        toolHints: {
+          [SUBMIT_TOOL]: {
+            readOnly: true,
+            alwaysLoad: true,
+          },
+        },
       }),
       model: this.#options.model,
-      instructions: prompt.instructions,
+      instructions: `${prompt.instructions}\n\n${SUBMIT_INSTRUCTION}`,
       permissionMode: "allow-reads",
-      activeTools: [...REVIEWER_TOOLS],
+      activeTools: [...REVIEWER_TOOLS, SUBMIT_TOOL],
+      tools: {
+        [SUBMIT_TOOL]: tool({
+          description:
+            "Submit your final answer. Call it once, as your last step.",
+          inputSchema: output,
+          execute: (answer) => {
+            submitted = { answer: answer };
+            return "Submitted. End your turn.";
+          },
+        }),
+      },
       // Root the session at `cwd` itself, not a per-session subdirectory.
       sandboxConfig: { workDir: "." },
-      // Claude Code's `outputFormat`: the final answer is a schema-checked object.
-      output: Output.object({ schema: output }),
     });
 
     const sandboxSession = await createLocalSandbox({
@@ -99,14 +126,16 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
       sandboxSession: sandboxSession,
     });
 
-    try {
+    let toolCalls = 0;
+    const exploration = new ExplorationLog(cwd);
+    async function turn(content: string[]) {
       const result = await agent.stream({
         session: session,
         abortSignal: abortSignal,
         messages: [
           {
             role: "user",
-            content: prompt.content.map((text) => {
+            content: content.map((text) => {
               return {
                 type: "text",
                 text: text,
@@ -116,14 +145,15 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
         ],
       });
 
-      // Text before the structured answer is narration, so only progress is reported.
-      let toolCalls = 0;
+      // Text replies are narration, so only progress is reported.
       let thinkingSince: number | undefined;
       let costUsd: number | undefined;
-      const exploration = new ExplorationLog(cwd);
       for await (const part of result.stream) {
         switch (part.type) {
           case "tool-call": {
+            if (part.toolName === SUBMIT_TOOL) {
+              break;
+            }
             toolCalls++;
             const call = explorationCall.safeParse(part);
             if (call.success) {
@@ -150,20 +180,44 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
             throw part.error;
         }
       }
-
-      const [usage, answer] = await Promise.all([result.usage, result.output]);
-      const stats: RunStats = {
-        durationMs: performance.now() - startedAt,
-        toolCalls: toolCalls,
-        inputTokens: usage.inputTokens,
-        cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
-        outputTokens: usage.outputTokens,
+      const usage = await result.usage;
+      return {
+        usage: usage,
         costUsd: costUsd,
       };
+    }
+
+    try {
+      const turns = [await turn(prompt.content)];
+      if (submitted === undefined) {
+        turns.push(await turn([SUBMIT_REMINDER]));
+      }
+      if (submitted === undefined) {
+        throw new Error(
+          `The reviewer ended twice without calling ${SUBMIT_TOOL}.`,
+        );
+      }
+
+      const stats = turns
+        .map(({ usage, costUsd }): RunStats => {
+          return {
+            durationMs: 0,
+            toolCalls: 0,
+            inputTokens: usage.inputTokens,
+            cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
+            outputTokens: usage.outputTokens,
+            costUsd: costUsd,
+          };
+        })
+        .reduce(sumStats);
       return {
-        // Model output, so checked here too rather than trusting the harness's check.
-        output: output.parse(answer),
-        stats: stats,
+        // Model output, so checked here too rather than trusting the tool's check.
+        output: output.parse(submitted.answer),
+        stats: {
+          ...stats,
+          durationMs: performance.now() - startedAt,
+          toolCalls: toolCalls,
+        },
         explored: exploration.explored(),
       };
     } finally {
