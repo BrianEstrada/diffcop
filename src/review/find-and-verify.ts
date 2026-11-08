@@ -118,9 +118,10 @@ export class FindAndVerify {
       })
       .filter(Boolean)
       .join(" ");
-    let findings = found.flatMap((run) => {
+    const kept = found.map((run) => {
       return run.output.findings.filter(keep);
     });
+    let findings = kept.flat();
     const merging: AgentResult<unknown>[] = [];
     const merged: MergedFinding[] = [];
     if (found.length > 1 && findings.length > 1) {
@@ -186,7 +187,7 @@ export class FindAndVerify {
       result.finders = finders.map(({ files }, index) => {
         const run = found[index];
         const finder: FinderRun = {
-          findings: run?.output.findings.filter(keep).length ?? 0,
+          findings: kept[index]?.length ?? 0,
           stats: run?.stats ?? runs.stats,
         };
         if (files) {
