@@ -26,8 +26,8 @@ inputs:
     description: low, medium, high, xhigh or max. Empty uses Claude Code's default.
     required: false
     default: high
-  max-finders:
-    description: Most finders to run in parallel, one per 400 changed lines. Past this many, each reviews more.
+  max-chunks:
+    description: Most chunks of about 400 changed lines to split a diff into, each reviewed twice. Past this many, chunks grow.
     required: false
     default: "6"
   debug:
@@ -65,7 +65,7 @@ runs:
         CLAUDE_CODE_OAUTH_TOKEN: ${{ inputs.claude-code-oauth-token }}
         PROMPT: ${{ inputs.prompt }}
         EFFORT: ${{ inputs.effort }}
-        MAX_FINDERS: ${{ inputs.max-finders }}
+        MAX_CHUNKS: ${{ inputs.max-chunks }}
         DEBUG: ${{ inputs.debug }}
       run: |
         # Unset secrets that aren't configured; Actions passes them as empty strings.
@@ -80,8 +80,8 @@ runs:
         if [ -n "$EFFORT" ]; then
           args+=(--effort "$EFFORT")
         fi
-        if [ -n "$MAX_FINDERS" ]; then
-          args+=(--maxFinders "$MAX_FINDERS")
+        if [ -n "$MAX_CHUNKS" ]; then
+          args+=(--maxChunks "$MAX_CHUNKS")
         fi
         if [ "$DEBUG" = "true" ]; then
           args+=(--debug)

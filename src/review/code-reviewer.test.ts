@@ -432,7 +432,11 @@ describe("CodeReviewer", () => {
     expect(reporter.events.at(-1)?.[2]).toEqual({ cancelled: true });
   });
 
-  test("runs one finder per chunk in parallel and verifies their pooled findings", async () => {
+  test("runs two finders per chunk and one over the whole diff, and verifies their pooled findings", async () => {
+    const empty = {
+      summary: "",
+      findings: [],
+    };
     const agent = new FakeAgent([
       {
         summary: "Traced a.",
@@ -442,10 +446,9 @@ describe("CodeReviewer", () => {
         summary: "Traced b.",
         findings: [finding("B")],
       },
-      {
-        summary: "",
-        findings: [],
-      },
+      empty,
+      empty,
+      empty,
       { duplicates: [] },
       {
         verdicts: [
@@ -466,22 +469,24 @@ describe("CodeReviewer", () => {
     const reviewed = await createReviewer(
       agent,
       new RecordingReporter(),
-      chunkSized("a/x.ts", "b/y.ts", "c/z.ts"),
+      chunkSized("a/x.ts", "b/y.ts"),
     ).review({ request: "x" });
 
     expect(
-      agent.runs.slice(0, 3).map((run) => {
+      agent.runs.slice(0, 5).map((run) => {
         return run.prompt.content[1];
       }),
     ).toEqual([
       "<assigned_files>\na/x.ts\n</assigned_files>",
       "<assigned_files>\nb/y.ts\n</assigned_files>",
-      "<assigned_files>\nc/z.ts\n</assigned_files>",
+      "<assigned_files>\na/x.ts\n</assigned_files>",
+      "<assigned_files>\nb/y.ts\n</assigned_files>",
+      "<user_request>\nx\n</user_request>",
     ]);
-    expect(agent.runs[4]?.prompt.content[1]).toContain('"title": "B"');
+    expect(agent.runs[6]?.prompt.content[1]).toContain('"title": "B"');
     expect(reviewed.summary).toBe("Traced a. Traced b.");
     expect(reviewed.findings).toEqual([finding("A"), finding("B")]);
-    expect(reviewed.stats.toolCalls).toBe(10);
+    expect(reviewed.stats.toolCalls).toBe(14);
     expect(
       reviewed.finders?.map(({ files, findings }) => {
         return [files, findings];
@@ -489,12 +494,18 @@ describe("CodeReviewer", () => {
     ).toEqual([
       [["a/x.ts"], 1],
       [["b/y.ts"], 1],
-      [["c/z.ts"], 0],
+      [["a/x.ts"], 0],
+      [["b/y.ts"], 0],
+      [undefined, 0],
     ]);
     expect(reviewed.merged).toEqual([]);
   });
 
   test("merges the finders' duplicates before verifying, and says what it merged", async () => {
+    const empty = {
+      summary: "",
+      findings: [],
+    };
     const agent = new FakeAgent([
       {
         summary: "",
@@ -504,6 +515,9 @@ describe("CodeReviewer", () => {
         summary: "",
         findings: [finding("A again"), finding("B")],
       },
+      empty,
+      empty,
+      empty,
       {
         duplicates: [
           {
@@ -521,7 +535,7 @@ describe("CodeReviewer", () => {
       chunkSized("a/x.ts", "b/y.ts"),
     ).review({ request: "x" });
 
-    const [, , merger, verifier] = agent.runs;
+    const [merger, verifier] = agent.runs.slice(5);
     expect(merger?.prompt.instructions).toContain("without using tools");
     expect(merger?.prompt.content[0]).toContain('"title": "A again"');
     expect(verifier?.prompt.content[1]).not.toContain("A again");
@@ -560,17 +574,17 @@ describe("CodeReviewer", () => {
       summary: "",
       findings: [],
     };
-    const agent = new FakeAgent([empty, empty, empty]);
+    const agent = new FakeAgent([empty, empty, empty, empty, empty]);
 
     const reviewed = await createReviewer(
       agent,
       new RecordingReporter(),
-      chunkSized("a/x.ts", "b/y.ts", "c/z.ts"),
+      chunkSized("a/x.ts", "b/y.ts"),
       1_500,
     ).review({ request: "x" });
 
     expect(reviewed.stats.durationMs).toBe(1_500);
-    expect(reviewed.stats.costUsd).toBe(0.75);
+    expect(reviewed.stats.costUsd).toBe(1.25);
   });
 
   test("verifies each file's findings in a session of its own", async () => {

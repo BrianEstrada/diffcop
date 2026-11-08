@@ -48,7 +48,7 @@ diffcop review "focus on error handling"
 diffcop review "review this code" --base origin/develop   # default: origin/HEAD, then main
 diffcop review "review this code" --cwd ../other-repo
 diffcop review "quick pass" --effort low                  # faster, shallower review
-diffcop review "review this code" --maxFinders 1          # one finder, whatever the diff's size
+diffcop review "review this code" --maxChunks 1           # one finder, whatever the diff's size
 diffcop review "review this code" --reporter json | jq .findings
 ```
 
@@ -114,7 +114,7 @@ jobs:
 | `github-token`            | `github.token`                                                       | Reads the PR and posts the comment.                   |
 | `prompt`                  | Review this pull request for bugs, security issues, and regressions. | What to ask the reviewer.                             |
 | `effort`                  | `high`                                                               | `low` to `max`. Empty uses Claude Code's default.     |
-| `max-finders`             | `6`                                                                  | Most finders in parallel, one per 400 changed lines.  |
+| `max-chunks`              | `6`                                                                  | Most ~400-line chunks a diff is split into.           |
 | `debug`                   | `false`                                                              | Also log the reviewer's tool calls and thinking time. |
 
 The action installs Bun, Node and pnpm on the runner, so later steps in the same job see those
@@ -129,10 +129,10 @@ keep `--ignore-scripts`.
 
 The first pass looks for bugs the diff introduced, plus a few nits, and on a PR checks that the
 description matches the code. A diff over 400 changed lines is split by path into chunks of about
-400 lines, tests kept with their source, and each chunk gets a finder of its own, up to six (set
-it with `--maxFinders`; past that, chunks grow). On a PR, one more finder checks the description
-against the whole diff. Their findings are merged, and a fresh session then tries to disprove each
-one. Only what survives is reported.
+400 lines, tests kept with their source, up to six (set it with `--maxChunks`; past that, chunks
+grow). Each chunk gets two finders of its own, and one more finder reviews the whole diff for bugs
+that span chunks. Their findings are merged, and a fresh session then tries to disprove each one.
+Only what survives is reported.
 
 The review opens with one headline:
 

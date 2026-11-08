@@ -3,6 +3,7 @@ import type { PullRequestData } from "@/context/github/pull-request-data";
 import type { ReviewContext } from "@/context/review-context-collector";
 import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
 import { LINES_PER_CHUNK } from "@/review/diff-chunks";
+import type { Finding, Scope } from "@/review/findings";
 
 const pullRequest: PullRequestData = {
   repo: "owner/repo",
@@ -94,25 +95,114 @@ describe("ReviewPromptBuilder.buildFinders", () => {
     expect(prompts[1]?.prompt.content[0]).toContain("<diff>\n+change\n</diff>");
   });
 
-  test("checks the description in a finder of its own that sees the whole diff", () => {
+  test("reviews each chunk twice, files in opposite orders", () => {
+    const sized: ReviewContext = {
+      ...context,
+      changedFiles: [
+        {
+          path: "a/x.ts",
+          additions: 100,
+          deletions: 0,
+        },
+        {
+          path: "a/z.ts",
+          additions: 100,
+          deletions: 0,
+        },
+        {
+          path: "b/y.ts",
+          additions: LINES_PER_CHUNK,
+          deletions: 0,
+        },
+      ],
+      diff: fileDiff("a/x.ts") + fileDiff("a/z.ts") + fileDiff("b/y.ts"),
+    };
+
+    const prompts = builder.buildFinders(sized, "x", 6);
+
+    expect(
+      prompts.map(({ files }) => {
+        return files;
+      }),
+    ).toEqual([
+      ["a/x.ts", "a/z.ts"],
+      ["b/y.ts"],
+      ["a/z.ts", "a/x.ts"],
+      ["b/y.ts"],
+      undefined,
+    ]);
+    const reversed = prompts[2]?.prompt.content[0] ?? "";
+    expect(reversed.indexOf("+a/z.ts line")).toBeLessThan(
+      reversed.indexOf("+a/x.ts line"),
+    );
+  });
+
+  test("adds one finder that reviews the whole diff and checks the description", () => {
     const prompts = builder.buildFinders(context, "x", 6);
+    const whole = prompts.at(-1);
 
     expect(
       prompts.map(({ prompt }) => {
         return prompt.instructions.includes(DESCRIPTION_CHECK);
       }),
-    ).toEqual([false, false, true]);
-    expect(prompts[2]?.files).toBeUndefined();
-    expect(prompts[2]?.prompt.content[0]).toContain("+a/x.ts line");
-    expect(prompts[2]?.prompt.content[0]).toContain("+b/y.ts line");
+    ).toEqual([false, false, false, false, true]);
+    expect(whole?.files).toBeUndefined();
+    expect(whole?.prompt.instructions).toContain("Find as many real bugs");
+    expect(whole?.prompt.content[0]).toContain("+a/x.ts line");
+    expect(whole?.prompt.content[0]).toContain("+b/y.ts line");
   });
 
-  test("has no description finder outside a PR", () => {
+  test("reviews the whole diff without a description check outside a PR", () => {
     const local: ReviewContext = {
       ...context,
       pullRequest: undefined,
     };
 
-    expect(builder.buildFinders(local, "x", 6)).toHaveLength(2);
+    const prompts = builder.buildFinders(local, "x", 6);
+
+    expect(prompts).toHaveLength(5);
+    expect(prompts.at(-1)?.prompt.instructions).not.toContain(
+      DESCRIPTION_CHECK,
+    );
+  });
+});
+
+describe("ReviewPromptBuilder.buildVerification", () => {
+  const builder = new ReviewPromptBuilder();
+
+  function at(file: string, scope: Scope = "introduced"): Finding {
+    return {
+      file: file,
+      startLine: 1,
+      endLine: 1,
+      severity: "high",
+      scope: scope,
+      title: "Breaks",
+      explanation: "Throws.",
+    };
+  }
+
+  test("shows only the diff of the files the findings cite", () => {
+    const prompt = builder.buildVerification(context, [at("a/x.ts")]);
+
+    expect(prompt.content[0]).toContain("+a/x.ts line");
+    expect(prompt.content[0]).not.toContain("+b/y.ts line");
+    expect(prompt.instructions).toContain("only the changes to the files");
+  });
+
+  test("shows the whole diff for a finding in an unchanged file", () => {
+    const prompt = builder.buildVerification(context, [at("c/other.ts")]);
+
+    expect(prompt.content[0]).toContain("+a/x.ts line");
+    expect(prompt.content[0]).toContain("+b/y.ts line");
+    expect(prompt.instructions).not.toContain("only the changes to the files");
+  });
+
+  test("shows the whole diff for a description finding", () => {
+    const prompt = builder.buildVerification(context, [
+      at("a/x.ts", "description"),
+    ]);
+
+    expect(prompt.content[0]).toContain("+b/y.ts line");
   });
 });

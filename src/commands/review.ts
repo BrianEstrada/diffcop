@@ -18,7 +18,7 @@ import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatt
 import { StickyComment } from "@/reporter/github/sticky-comment";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
-import { CodeReviewer, DEFAULT_MAX_FINDERS } from "@/review/code-reviewer";
+import { CodeReviewer, DEFAULT_MAX_CHUNKS } from "@/review/code-reviewer";
 import { DescriptionRechecker } from "@/review/description-rechecker";
 import type { RecheckOutcome } from "@/review/description-rechecker";
 import { FindAndVerify } from "@/review/find-and-verify";
@@ -178,11 +178,11 @@ export default defineCommand({
       options: [...EFFORTS],
       description: "How hard the model thinks (default: Claude Code's)",
     },
-    maxFinders: {
+    maxChunks: {
       type: "string",
       description:
-        "Most finders to run in parallel, one per 400 changed lines; past this many, each reviews more",
-      default: String(DEFAULT_MAX_FINDERS),
+        "Most chunks of about 400 changed lines to split a diff into, each reviewed twice; past this many, chunks grow",
+      default: String(DEFAULT_MAX_CHUNKS),
     },
     reporter: {
       type: "enum",
@@ -203,7 +203,7 @@ export default defineCommand({
     if (args.maxTurns !== undefined) {
       maxTurns = parsePositiveInt("maxTurns", args.maxTurns);
     }
-    const maxFinders = parsePositiveInt("maxFinders", args.maxFinders);
+    const maxChunks = parsePositiveInt("maxChunks", args.maxChunks);
     const sizeLimit = new ChangeSizeLimit({
       maxLines: parsePositiveInt("maxLines", args.maxLines),
       maxFiles: parsePositiveInt("maxFiles", args.maxFiles),
@@ -278,7 +278,7 @@ export default defineCommand({
     const result = await reviewer.review({
       request: args.prompt,
       base: args.base,
-      maxFinders: maxFinders,
+      maxChunks: maxChunks,
       abortSignal: abort.signal,
     });
 
