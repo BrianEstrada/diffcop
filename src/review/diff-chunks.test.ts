@@ -52,6 +52,7 @@ describe("sourceKey", () => {
     ["app/src/test/kotlin/FooTest.kt", "app/src/main/kotlin/Foo"],
     ["app/src/main/kotlin/Foo.kt", "app/src/main/kotlin/Foo"],
     [".github/.eslintrc", ".github/.eslintrc"],
+    ["src/Test.kt", "src/Test"],
   ])("%s keys as %s", (path, expected) => {
     expect(sourceKey(path)).toBe(expected);
   });

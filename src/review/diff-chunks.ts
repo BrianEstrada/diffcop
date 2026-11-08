@@ -27,9 +27,11 @@ export function sourceKey(path: string) {
     .replace(/\/__tests__$/, "")
     .replace(/(^|\/)src\/test(\/|$)/, "$1src/main$2");
   const name = basename(current);
-  const stem = (name.split(".")[0] || name)
-    .replace(/^test_/, "")
-    .replace(/(_test|_spec|Tests?|Spec)$/, "");
+  const base = name.split(".")[0] || name;
+  // A file named just `Test.kt` keeps its name rather than sharing an empty stem.
+  const stem =
+    base.replace(/^test_/, "").replace(/(_test|_spec|Tests?|Spec)$/, "") ||
+    base;
   return `${dir}/${stem}`;
 }
 
