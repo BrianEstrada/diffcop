@@ -21,6 +21,7 @@ import type {
   MergedFinding,
   ReviewResult,
 } from "@/review/findings";
+import { toError } from "@/util/errors";
 import { mapLimit } from "@/util/map-limit";
 
 // Small batches so each finding gets the verifier's attention; one session
@@ -46,6 +47,13 @@ export function verificationBatches(findings: Finding[]) {
     }
     return batches;
   });
+}
+
+function finderFailedWarning(files: string[] | undefined, error: Error) {
+  if (!files) {
+    return `The whole-diff finder failed, so bugs that span files may be missed: ${error.message}`;
+  }
+  return `A finder for ${files.join(", ")} failed, so those files got one review fewer: ${error.message}`;
 }
 
 function mergeRuns(runs: AgentResult<unknown>[]) {
@@ -101,7 +109,7 @@ export class FindAndVerify {
     }: { abortSignal?: AbortSignal; keep?: (finding: Finding) => boolean } = {},
   ): Promise<ReviewResult> {
     const startedAt = this.#now();
-    const found = await Promise.all(
+    const settled = await Promise.allSettled(
       finders.map(({ prompt }) => {
         return this.#agent.run({
           cwd: context.repoRoot,
@@ -112,14 +120,40 @@ export class FindAndVerify {
         });
       }),
     );
+    const errors = settled.map((outcome) => {
+      if (outcome.status === "fulfilled") {
+        return undefined;
+      }
+      return toError(outcome.reason);
+    });
+    const [firstError] = errors.filter((error) => {
+      return error !== undefined;
+    });
+    // One finder failing costs its share of the review, not the whole review.
+    if (firstError && (abortSignal?.aborted || errors.every(Boolean))) {
+      throw firstError;
+    }
+    for (const [index, error] of errors.entries()) {
+      if (error) {
+        await this.#reporter.warning(
+          finderFailedWarning(finders[index]?.files, error),
+        );
+      }
+    }
+    const found = settled.flatMap((outcome) => {
+      return outcome.status === "fulfilled" ? [outcome.value] : [];
+    });
     const summary = found
       .map((run) => {
         return run.output.summary.trim();
       })
       .filter(Boolean)
       .join(" ");
-    const kept = found.map((run) => {
-      return run.output.findings.filter(keep);
+    const kept = settled.map((outcome) => {
+      if (outcome.status === "rejected") {
+        return [];
+      }
+      return outcome.value.output.findings.filter(keep);
     });
     let findings = kept.flat();
     const merging: AgentResult<unknown>[] = [];
@@ -185,13 +219,19 @@ export class FindAndVerify {
     };
     if (finders.length > 1) {
       result.finders = finders.map(({ files }, index) => {
-        const run = found[index];
+        const outcome = settled[index];
         const finder: FinderRun = {
           findings: kept[index]?.length ?? 0,
-          stats: run?.stats ?? runs.stats,
         };
         if (files) {
           finder.files = files;
+        }
+        if (outcome?.status === "fulfilled") {
+          finder.stats = outcome.value.stats;
+        }
+        const error = errors[index];
+        if (error) {
+          finder.error = error.message;
         }
         return finder;
       });

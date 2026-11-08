@@ -122,7 +122,9 @@ export interface FinderRun {
   // Absent for the description finder.
   files?: string[];
   findings: number;
-  stats: RunStats;
+  // Absent when the finder failed; `error` says why.
+  stats?: RunStats;
+  error?: string;
 }
 
 export interface ReviewResult {

@@ -28,8 +28,12 @@ class FakeAgent implements ReviewerAgent {
 
   async run<T>(run: AgentRun<T>) {
     this.runs.push(run);
+    const answer = this.#answers[this.runs.length - 1];
+    if (answer instanceof Error) {
+      throw answer;
+    }
     return {
-      output: run.output.parse(this.#answers[this.runs.length - 1]),
+      output: run.output.parse(answer),
       stats: {
         durationMs: 1_000,
         toolCalls: 1,
@@ -42,9 +46,13 @@ class FakeAgent implements ReviewerAgent {
   }
 }
 
+const warnings: string[] = [];
+
 const silent: ReviewReporter = {
   started: async () => {},
-  warning: async () => {},
+  warning: async (message) => {
+    warnings.push(message);
+  },
   toolCall: () => {},
   thinking: () => {},
   verifying: async () => {},
@@ -107,5 +115,59 @@ describe("FindAndVerify", () => {
         return findings;
       }),
     ).toEqual([1, 0]);
+  });
+
+  test("keeps the other finders' findings when one fails, and warns", async () => {
+    warnings.length = 0;
+    const agent = new FakeAgent([
+      new Error("never submitted"),
+      {
+        summary: "Traced b.",
+        findings: [finding("B")],
+      },
+      {
+        verdicts: [
+          {
+            id: 1,
+            verdict: "confirmed",
+            reason: "Fails.",
+          },
+        ],
+      },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(context, [
+      {
+        ...prompt,
+        files: ["a.ts"],
+      },
+      prompt,
+    ]);
+
+    expect(result.findings).toEqual([finding("B")]);
+    expect(result.summary).toBe("Traced b.");
+    expect(result.finders?.[0]).toEqual({
+      files: ["a.ts"],
+      findings: 0,
+      error: "never submitted",
+    });
+    expect(warnings).toEqual([
+      "A finder for a.ts failed, so those files got one review fewer: never submitted",
+    ]);
+  });
+
+  test("fails when every finder fails", async () => {
+    const agent = new FakeAgent([new Error("first"), new Error("second")]);
+
+    expect(
+      new FindAndVerify(new ReviewPromptBuilder(), agent, silent).run(context, [
+        prompt,
+        prompt,
+      ]),
+    ).rejects.toThrow("first");
   });
 });

@@ -131,8 +131,9 @@ The first pass looks for bugs the diff introduced, plus a few nits, and on a PR 
 description matches the code. A diff over 400 changed lines is split by path into chunks of about
 400 lines, tests kept with their source, up to six (set it with `--maxChunks`; past that, chunks
 grow). Each chunk gets two finders of its own, and one more finder reviews the whole diff for bugs
-that span chunks. Their findings are merged, and a fresh session then tries to disprove each one.
-Only what survives is reported.
+that span chunks. If one finder fails, the review goes on without it and says so in a warning. Their
+findings are merged, and a fresh session then tries to disprove each one. Only what survives is
+reported.
 
 The review opens with one headline:
 
