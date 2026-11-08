@@ -45,3 +45,17 @@ describe("finishCost", () => {
     ).toBeUndefined();
   });
 });
+
+describe("Claude Code bridge", () => {
+  // patches/@ai-sdk%2Fharness-claude-code@*.patch: under "allow-reads" the bridge
+  // defers any tool it doesn't know, and the harness then denies StructuredOutput.
+  test("doesn't ask approval for StructuredOutput", async () => {
+    const bridge = await Bun.file(
+      new URL(
+        "bridge/index.mjs",
+        import.meta.resolve("@ai-sdk/harness-claude-code"),
+      ),
+    ).text();
+    expect(bridge).toContain('StructuredOutput: "readonly",');
+  });
+});
