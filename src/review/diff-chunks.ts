@@ -23,7 +23,8 @@ export function currentPath(path: string) {
 export function sourceKey(path: string) {
   const current = currentPath(path);
   const dir = dirname(current)
-    .replace(/(^|\/)__tests__$/, "")
+    .replace(/^__tests__$/, ".")
+    .replace(/\/__tests__$/, "")
     .replace(/(^|\/)src\/test(\/|$)/, "$1src/main$2");
   const name = basename(current);
   const stem = (name.split(".")[0] || name)
