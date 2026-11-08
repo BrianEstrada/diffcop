@@ -335,7 +335,7 @@ describe("splitByVerdict", () => {
 describe("removeDuplicates", () => {
   const findings = [finding("A"), finding("B"), finding("C")];
 
-  test("removes each finding named a duplicate of another", () => {
+  test("merges each finding named a duplicate into the one it repeats", () => {
     expect(
       removeDuplicates(findings, [
         {
@@ -343,7 +343,15 @@ describe("removeDuplicates", () => {
           duplicateOf: 1,
         },
       ]),
-    ).toEqual([finding("A"), finding("B")]);
+    ).toEqual({
+      kept: [finding("A"), finding("B")],
+      merged: [
+        {
+          finding: finding("C"),
+          into: finding("A"),
+        },
+      ],
+    });
   });
 
   test("keeps one of two findings named duplicates of each other", () => {
@@ -357,7 +365,7 @@ describe("removeDuplicates", () => {
           id: 2,
           duplicateOf: 1,
         },
-      ]),
+      ]).kept,
     ).toEqual([finding("B"), finding("C")]);
   });
 
@@ -377,6 +385,9 @@ describe("removeDuplicates", () => {
           duplicateOf: 3,
         },
       ]),
-    ).toEqual(findings);
+    ).toEqual({
+      kept: findings,
+      merged: [],
+    });
   });
 });

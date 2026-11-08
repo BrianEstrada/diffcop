@@ -1,14 +1,9 @@
 import type { ReviewerAgent } from "@/agent/reviewer-agent";
 import type { ReviewContextCollector } from "@/context/review-context-collector";
 import { toError } from "@/util/errors";
-import { FINDER_LENSES } from "@/prompt/review-prompt-builder";
 import type { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
-import type { ChangedFile } from "@/context/repository";
 import type { ReviewReporter } from "@/reporter/review-reporter";
-import {
-  measureChangeSize,
-  staleBaseWarning,
-} from "@/review/change-size-limit";
+import { staleBaseWarning } from "@/review/change-size-limit";
 import type { ChangeSizeLimit } from "@/review/change-size-limit";
 import { FindAndVerify } from "@/review/find-and-verify";
 import type { ReviewResult } from "@/review/findings";
@@ -16,22 +11,12 @@ import type { ReviewResult } from "@/review/findings";
 export interface ReviewRequest {
   request: string;
   base?: string;
-  // Parallel finders, one per lens; 1 runs a single generalist. Defaults to
-  // finderCount of the change.
-  finders?: number;
+  // Parallel finders, one per chunk of the diff; past this many, chunks grow.
+  maxFinders?: number;
   abortSignal?: AbortSignal;
 }
 
-const LINES_PER_FINDER = 400;
-
-// One finder per 400 changed lines, lockfiles aside, up to one per lens.
-export function finderCount(changedFiles: ChangedFile[]) {
-  const { lines } = measureChangeSize(changedFiles);
-  return Math.min(
-    FINDER_LENSES.length,
-    Math.max(1, Math.ceil(lines / LINES_PER_FINDER)),
-  );
-}
+export const DEFAULT_MAX_FINDERS = 6;
 
 // Modeled on claude-code-action's context → prompt → agent pipeline.
 export class CodeReviewer {
@@ -64,7 +49,7 @@ export class CodeReviewer {
   async review({
     request,
     base,
-    finders,
+    maxFinders = DEFAULT_MAX_FINDERS,
     abortSignal,
   }: ReviewRequest): Promise<ReviewResult> {
     await this.#reporter.started();
@@ -81,11 +66,7 @@ export class CodeReviewer {
       }
       const result = await this.#findAndVerify.run(
         context,
-        this.#promptBuilder.buildFinders(
-          context,
-          request,
-          finders ?? finderCount(context.changedFiles),
-        ),
+        this.#promptBuilder.buildFinders(context, request, maxFinders),
         { abortSignal: abortSignal },
       );
       await this.#reporter.completed(result);

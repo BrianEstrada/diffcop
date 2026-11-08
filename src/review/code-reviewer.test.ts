@@ -3,13 +3,11 @@ import type { Explored } from "@/agent/explored";
 import type { AgentRun, ReviewerAgent, RunStats } from "@/agent/reviewer-agent";
 import type { ChangedFile, Repository } from "@/context/repository";
 import { ReviewContextCollector } from "@/context/review-context-collector";
-import {
-  FINDER_LENSES,
-  ReviewPromptBuilder,
-} from "@/prompt/review-prompt-builder";
+import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
-import { CodeReviewer, finderCount } from "@/review/code-reviewer";
+import { CodeReviewer } from "@/review/code-reviewer";
+import { LINES_PER_CHUNK } from "@/review/diff-chunks";
 import { verificationBatches } from "@/review/find-and-verify";
 import type { Finding, ReviewResult } from "@/review/findings";
 
@@ -51,6 +49,17 @@ class FakeRepository implements Repository {
   async hashObject() {
     return "0000";
   }
+}
+
+// One chunk's worth of changed lines in each file, so each gets its own finder.
+function chunkSized(...paths: string[]): ChangedFile[] {
+  return paths.map((path) => {
+    return {
+      path: path,
+      additions: LINES_PER_CHUNK,
+      deletions: 0,
+    };
+  });
 }
 
 function finding(title: string): Finding {
@@ -423,14 +432,14 @@ describe("CodeReviewer", () => {
     expect(reporter.events.at(-1)?.[2]).toEqual({ cancelled: true });
   });
 
-  test("runs one finder per lens in parallel and verifies their pooled findings", async () => {
+  test("runs one finder per chunk in parallel and verifies their pooled findings", async () => {
     const agent = new FakeAgent([
       {
-        summary: "Traced state.",
+        summary: "Traced a.",
         findings: [finding("A")],
       },
       {
-        summary: "Traced inputs.",
+        summary: "Traced b.",
         findings: [finding("B")],
       },
       {
@@ -457,24 +466,35 @@ describe("CodeReviewer", () => {
     const reviewed = await createReviewer(
       agent,
       new RecordingReporter(),
-    ).review({
-      request: "x",
-      finders: 3,
-    });
+      chunkSized("a/x.ts", "b/y.ts", "c/z.ts"),
+    ).review({ request: "x" });
 
-    const finders = agent.runs.slice(0, 3);
-    finders.forEach((run, index) => {
-      expect(run.prompt.instructions).toContain(
-        `Yours is ${FINDER_LENSES[index]?.name}:`,
-      );
-    });
+    expect(
+      agent.runs.slice(0, 3).map((run) => {
+        return run.prompt.content[1];
+      }),
+    ).toEqual([
+      "<assigned_files>\na/x.ts\n</assigned_files>",
+      "<assigned_files>\nb/y.ts\n</assigned_files>",
+      "<assigned_files>\nc/z.ts\n</assigned_files>",
+    ]);
     expect(agent.runs[4]?.prompt.content[1]).toContain('"title": "B"');
-    expect(reviewed.summary).toBe("Traced state. Traced inputs.");
+    expect(reviewed.summary).toBe("Traced a. Traced b.");
     expect(reviewed.findings).toEqual([finding("A"), finding("B")]);
     expect(reviewed.stats.toolCalls).toBe(10);
+    expect(
+      reviewed.finders?.map(({ files, findings }) => {
+        return [files, findings];
+      }),
+    ).toEqual([
+      [["a/x.ts"], 1],
+      [["b/y.ts"], 1],
+      [["c/z.ts"], 0],
+    ]);
+    expect(reviewed.merged).toEqual([]);
   });
 
-  test("merges the finders' duplicates before verifying", async () => {
+  test("merges the finders' duplicates before verifying, and says what it merged", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
@@ -495,41 +515,44 @@ describe("CodeReviewer", () => {
       { verdicts: [] },
     ]);
 
-    await createReviewer(agent, new RecordingReporter()).review({
-      request: "x",
-      finders: 2,
-    });
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      chunkSized("a/x.ts", "b/y.ts"),
+    ).review({ request: "x" });
 
     const [, , merger, verifier] = agent.runs;
     expect(merger?.prompt.instructions).toContain("without using tools");
     expect(merger?.prompt.content[0]).toContain('"title": "A again"');
     expect(verifier?.prompt.content[1]).not.toContain("A again");
     expect(verifier?.prompt.content[1]).toContain('"title": "B"');
+    expect(reviewed.merged).toEqual([
+      {
+        finding: finding("A again"),
+        into: finding("A"),
+      },
+    ]);
   });
 
-  test("picks one finder per 400 changed lines, up to one per lens", () => {
-    function counted(additions: number) {
-      return finderCount([
-        {
-          path: "a.ts",
-          additions: additions,
-          deletions: 0,
-        },
-        {
-          path: "bun.lock",
-          additions: 5_000,
-          deletions: 0,
-        },
-      ]);
-    }
-
-    expect([0, 400, 401, 1_204, 10_000].map(counted)).toEqual([
-      1,
-      1,
-      2,
-      4,
-      FINDER_LENSES.length,
+  test("runs a single finder over the whole diff when the change fits one chunk", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [],
+      },
     ]);
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      chunkSized("a/x.ts"),
+    ).review({ request: "x" });
+
+    expect(agent.runs).toHaveLength(1);
+    expect(agent.runs[0]?.prompt.content[1]).toBe(
+      "<user_request>\nx\n</user_request>",
+    );
+    expect(reviewed.finders).toBeUndefined();
   });
 
   test("reports the wall time of parallel finders, not their summed durations", async () => {
@@ -542,12 +565,9 @@ describe("CodeReviewer", () => {
     const reviewed = await createReviewer(
       agent,
       new RecordingReporter(),
-      [],
+      chunkSized("a/x.ts", "b/y.ts", "c/z.ts"),
       1_500,
-    ).review({
-      request: "x",
-      finders: 3,
-    });
+    ).review({ request: "x" });
 
     expect(reviewed.stats.durationMs).toBe(1_500);
     expect(reviewed.stats.costUsd).toBe(0.75);

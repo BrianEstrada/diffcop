@@ -1,10 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequestData } from "@/context/github/pull-request-data";
 import type { ReviewContext } from "@/context/review-context-collector";
-import {
-  FINDER_LENSES,
-  ReviewPromptBuilder,
-} from "@/prompt/review-prompt-builder";
+import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
+import { LINES_PER_CHUNK } from "@/review/diff-chunks";
 
 const pullRequest: PullRequestData = {
   repo: "owner/repo",
@@ -25,14 +23,24 @@ const pullRequest: PullRequestData = {
   reviews: { nodes: [] },
 };
 
+function fileDiff(path: string) {
+  return `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -0,0 +1 @@\n+${path} line\n`;
+}
+
 const context: ReviewContext = {
   repoRoot: "/repo",
   branch: "feature",
   base: "main",
   mergeBase: "abc123",
   commits: [],
-  changedFiles: [],
-  diff: "+change",
+  changedFiles: ["a/x.ts", "b/y.ts"].map((path) => {
+    return {
+      path: path,
+      additions: LINES_PER_CHUNK,
+      deletions: 0,
+    };
+  }),
+  diff: fileDiff("a/x.ts") + fileDiff("b/y.ts"),
   pullRequest: {
     data: pullRequest,
     changedFilesWithSha: [],
@@ -44,31 +52,67 @@ const DESCRIPTION_CHECK = "Check the PR description against the diff.";
 describe("ReviewPromptBuilder.buildFinders", () => {
   const builder = new ReviewPromptBuilder();
 
-  test("runs one generalist when asked for a single finder", () => {
-    expect(builder.buildFinders(context, "x", 1)).toEqual([
-      builder.build(context, "x"),
+  test("runs one generalist over the whole diff when the change fits one chunk", () => {
+    const small: ReviewContext = {
+      ...context,
+      changedFiles: [
+        {
+          path: "a/x.ts",
+          additions: 10,
+          deletions: 0,
+        },
+      ],
+    };
+
+    expect(builder.buildFinders(small, "x", 6)).toEqual([
+      { prompt: builder.build(small, "x") },
     ]);
   });
 
-  test("gives each finder its own lens on the same context and request", () => {
-    const prompts = builder.buildFinders(context, "x", FINDER_LENSES.length);
+  test("gives each chunk's finder only its own files' diff", () => {
+    const [first, second] = builder.buildFinders(context, "x", 6);
 
-    expect(prompts).toHaveLength(FINDER_LENSES.length);
-    prompts.forEach((prompt, index) => {
-      expect(prompt.instructions).toContain(
-        `Yours is ${FINDER_LENSES[index]?.name}:`,
-      );
-      expect(prompt.content).toEqual(builder.build(context, "x").content);
-    });
+    expect(first?.files).toEqual(["a/x.ts"]);
+    expect(first?.prompt.content[0]).toContain("+a/x.ts line");
+    expect(first?.prompt.content[0]).not.toContain("+b/y.ts line");
+    expect(first?.prompt.content[1]).toBe(
+      "<assigned_files>\na/x.ts\n</assigned_files>",
+    );
+    expect(second?.prompt.content[0]).toContain("+b/y.ts line");
+    expect(second?.prompt.content[0]).not.toContain("+a/x.ts line");
   });
 
-  test("checks the description in the first finder only", () => {
-    const prompts = builder.buildFinders(context, "x", 3);
+  test("gives every chunk the whole diff when it can't be split by file", () => {
+    const unsplittable: ReviewContext = {
+      ...context,
+      diff: "+change",
+    };
+
+    const prompts = builder.buildFinders(unsplittable, "x", 6);
+
+    expect(prompts[0]?.prompt.content[0]).toContain("<diff>\n+change\n</diff>");
+    expect(prompts[1]?.prompt.content[0]).toContain("<diff>\n+change\n</diff>");
+  });
+
+  test("checks the description in a finder of its own that sees the whole diff", () => {
+    const prompts = builder.buildFinders(context, "x", 6);
 
     expect(
-      prompts.map((prompt) => {
+      prompts.map(({ prompt }) => {
         return prompt.instructions.includes(DESCRIPTION_CHECK);
       }),
-    ).toEqual([true, false, false]);
+    ).toEqual([false, false, true]);
+    expect(prompts[2]?.files).toBeUndefined();
+    expect(prompts[2]?.prompt.content[0]).toContain("+a/x.ts line");
+    expect(prompts[2]?.prompt.content[0]).toContain("+b/y.ts line");
+  });
+
+  test("has no description finder outside a PR", () => {
+    const local: ReviewContext = {
+      ...context,
+      pullRequest: undefined,
+    };
+
+    expect(builder.buildFinders(local, "x", 6)).toHaveLength(2);
   });
 });

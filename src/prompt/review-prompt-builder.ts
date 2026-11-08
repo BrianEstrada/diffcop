@@ -2,6 +2,7 @@ import type {
   PullRequestDetails,
   ReviewContext,
 } from "@/context/review-context-collector";
+import { planChunks, splitDiffByFile } from "@/review/diff-chunks";
 import { numberFindings } from "@/review/findings";
 import type { Finding } from "@/review/findings";
 import {
@@ -42,34 +43,14 @@ A finding with scope "description", whatever its severity, isn't a bug: confirm 
 If two findings describe the same defect, give the clearer one its verdict and mark the other "duplicate", with duplicateOf set to the clearer one's id. Findings that only touch the same lines aren't duplicates.
 Return one verdict per finding id, with a one-sentence reason.`;
 
-// Parallel finders each get one focus, so a run's union covers what one
-// generalist misses (Anthropic's /code-review, review-hog, kodus).
-export const FINDER_LENSES = [
-  {
-    name: "state and timing",
-    focus:
-      "how state changes over time: async work and its ordering, races, what happens when the user acts again, cancels or closes partway through, effects and subscriptions that run too early or too late, and when a library's callbacks really fire compared with what the code assumes.",
-  },
-  {
-    name: "inputs, limits and failures",
-    focus:
-      "the values that reach the changed code: empty, huge, unusual or hostile inputs, size, length and encoding limits enforced elsewhere in the repository, and every error path: what fails, what the user sees and what state is left behind.",
-  },
-  {
-    name: "callers and context",
-    focus:
-      "everywhere the changed code is reached from: every caller and entry point, the modes, roles and states it runs in, such as read-only, disabled, other users or other environments, and the existing features it interacts with or bypasses.",
-  },
-  {
-    name: "consistency and cost",
-    focus:
-      "how the change fits the repository: rules in AGENTS.md, CLAUDE.md or contributing docs, existing helpers, constants and patterns it duplicates or contradicts, comments and docs on changed lines that the code contradicts, and work repeated needlessly, such as values recreated on every render or call.",
-  },
-] as const;
+// One session's attention runs out on a large diff, so each parallel finder
+// gets a share of the files and only their diff (pr-agent, review-hog).
+const CHUNK_INSTRUCTIONS = `Several reviewers are reviewing this change at once, each given a share of the changed files. Yours are listed in <assigned_files>, and the diff block holds only their changes; <changed_files> lists the whole change.
+Review your files in depth. Follow them into any code they could break, including the other changed files, which you can Read. Report bugs in your files, and any bug elsewhere that your files cause.`;
 
-function lensInstructions({ name, focus }: (typeof FINDER_LENSES)[number]) {
-  return `Several reviewers are reviewing this change at once, each with a different focus. Yours is ${name}: ${focus} Go deep on it, and still report any other bug you come across.`;
-}
+// With chunked finders, no finder sees the whole diff, so the description gets a check of its own.
+const DESCRIPTION_FINDER_INSTRUCTIONS = `You are checking a pull request's description against its diff, in a local git repository, with read-only access: use Read, Glob and Grep, and never modify files.
+The repository context and diff are in the first message. Other reviewers are reviewing the code itself, so report only findings with scope "description", never bugs or nits.`;
 
 // Parallel finders often report the same defect; merging them before
 // verification keeps the report and the verifier's workload free of repeats.
@@ -97,6 +78,12 @@ export interface ReviewPrompt {
   content: string[];
 }
 
+export interface FinderPrompt {
+  prompt: ReviewPrompt;
+  // The finder's share of the change; absent when it reviews the whole diff.
+  files?: string[];
+}
+
 const PROMPT_TAGS = [
   "formatted_context",
   "pr_or_issue_body",
@@ -115,6 +102,7 @@ const PROMPT_TAGS = [
   "diff",
   "user_request",
   "findings",
+  "assigned_files",
 ] as const;
 
 type PromptTag = (typeof PROMPT_TAGS)[number];
@@ -195,24 +183,41 @@ export class ReviewPromptBuilder {
   }
 
   build(context: ReviewContext, request: string): ReviewPrompt {
-    return this.#finder(context, request, { checkDescription: true });
+    const instructions = [FINDER_INSTRUCTIONS];
+    if (context.pullRequest) {
+      instructions.push(PULL_REQUEST_INSTRUCTIONS, DESCRIPTION_CHECK);
+    }
+    return {
+      instructions: instructions.join("\n"),
+      content: [this.#contextBlock(context), section("user_request", request)],
+    };
   }
 
-  // One finder per lens, in FINDER_LENSES order; only the first checks the description.
+  // One finder per chunk of the diff, plus one for the description on a PR. A
+  // change that fits in one chunk gets a single finder over the whole diff.
   buildFinders(
     context: ReviewContext,
     request: string,
-    count: number,
-  ): ReviewPrompt[] {
-    if (count <= 1) {
-      return [this.build(context, request)];
+    maxFinders: number,
+  ): FinderPrompt[] {
+    const chunks = planChunks(context.changedFiles, maxFinders);
+    if (chunks.length <= 1) {
+      return [{ prompt: this.build(context, request) }];
     }
-    return FINDER_LENSES.slice(0, count).map((lens, index) => {
-      return this.#finder(context, request, {
-        checkDescription: index === 0,
-        lens: lens,
+    const fileDiffs = splitDiffByFile(context.diff, context.changedFiles);
+    const finders: FinderPrompt[] = chunks.map((chunk) => {
+      const files = chunk.map((file) => {
+        return file.path;
       });
+      return {
+        prompt: this.#chunkFinder(context, request, files, fileDiffs),
+        files: files,
+      };
     });
+    if (context.pullRequest) {
+      finders.push({ prompt: this.#descriptionFinder(context) });
+    }
+    return finders;
   }
 
   buildDescriptionRecheck(
@@ -255,34 +260,47 @@ export class ReviewPromptBuilder {
     };
   }
 
-  #finder(
+  // If the diff can't be split by file, the finder gets all of it and its file list.
+  #chunkFinder(
     context: ReviewContext,
     request: string,
-    {
-      checkDescription,
-      lens,
-    }: {
-      checkDescription: boolean;
-      lens?: (typeof FINDER_LENSES)[number];
-    },
+    files: string[],
+    fileDiffs: Map<string, string> | undefined,
   ): ReviewPrompt {
-    const instructions: string[] = [FINDER_INSTRUCTIONS];
-    if (lens) {
-      instructions.push(lensInstructions(lens));
-    }
+    const instructions = [FINDER_INSTRUCTIONS, CHUNK_INSTRUCTIONS];
     if (context.pullRequest) {
       instructions.push(PULL_REQUEST_INSTRUCTIONS);
-      if (checkDescription) {
-        instructions.push(DESCRIPTION_CHECK);
-      }
+    }
+    let diff = context.diff;
+    if (fileDiffs) {
+      diff = files
+        .map((file) => {
+          return fileDiffs.get(file) ?? "";
+        })
+        .join("");
     }
     return {
       instructions: instructions.join("\n"),
-      content: [this.#contextBlock(context), section("user_request", request)],
+      content: [
+        this.#contextBlock(context, diff),
+        section("assigned_files", files.join("\n")),
+        section("user_request", request),
+      ],
     };
   }
 
-  #contextBlock(context: ReviewContext) {
+  #descriptionFinder(context: ReviewContext): ReviewPrompt {
+    return {
+      instructions: [
+        DESCRIPTION_FINDER_INSTRUCTIONS,
+        VERIFIER_PULL_REQUEST_INSTRUCTIONS,
+        DESCRIPTION_CHECK,
+      ].join("\n"),
+      content: [this.#contextBlock(context)],
+    };
+  }
+
+  #contextBlock(context: ReviewContext, diff = context.diff) {
     const { pullRequest } = context;
     return [
       ...(pullRequest ? pullRequestSections(pullRequest, context) : []),
@@ -298,7 +316,7 @@ export class ReviewPromptBuilder {
       ),
       // With a PR, the PR's changed_files block above replaces this one.
       ...(pullRequest ? [] : [section("changed_files", changedFiles(context))]),
-      section("diff", this.#formatDiff(context.diff) || "(empty diff)"),
+      section("diff", this.#formatDiff(diff) || "(empty diff)"),
     ].join("\n\n");
   }
 

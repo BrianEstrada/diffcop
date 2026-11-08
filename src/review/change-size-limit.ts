@@ -20,11 +20,15 @@ export interface ChangeSizeLimits {
   maxFiles: number;
 }
 
+export function isLockfile(path: string) {
+  return LOCKFILES.has(basename(path));
+}
+
 // Binary files count as files but add no lines: `git diff --numstat` gives
 // them `-` for both counts.
 export function measureChangeSize(changedFiles: ChangedFile[]): ChangeSize {
   const counted = changedFiles.filter((file) => {
-    return !LOCKFILES.has(basename(file.path));
+    return !isLockfile(file.path);
   });
   return {
     lines: counted.reduce((sum, file) => {

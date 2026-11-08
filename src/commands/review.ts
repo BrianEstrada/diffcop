@@ -9,10 +9,7 @@ import { readPullRequestContext } from "@/context/github/pull-request-context";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
 import { PullRequestFetcher } from "@/context/github/pull-request-fetcher";
 import { ReviewContextCollector } from "@/context/review-context-collector";
-import {
-  FINDER_LENSES,
-  ReviewPromptBuilder,
-} from "@/prompt/review-prompt-builder";
+import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
 import { ConsoleReporter } from "@/reporter/console/console-reporter";
 import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
@@ -21,7 +18,7 @@ import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatt
 import { StickyComment } from "@/reporter/github/sticky-comment";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
-import { CodeReviewer } from "@/review/code-reviewer";
+import { CodeReviewer, DEFAULT_MAX_FINDERS } from "@/review/code-reviewer";
 import { DescriptionRechecker } from "@/review/description-rechecker";
 import type { RecheckOutcome } from "@/review/description-rechecker";
 import { FindAndVerify } from "@/review/find-and-verify";
@@ -181,9 +178,11 @@ export default defineCommand({
       options: [...EFFORTS],
       description: "How hard the model thinks (default: Claude Code's)",
     },
-    finders: {
+    maxFinders: {
       type: "string",
-      description: `Finders to run in parallel, each with its own focus, from 1 (one generalist) to ${FINDER_LENSES.length} (default: one per 400 changed lines)`,
+      description:
+        "Most finders to run in parallel, one per 400 changed lines; past this many, each reviews more",
+      default: String(DEFAULT_MAX_FINDERS),
     },
     reporter: {
       type: "enum",
@@ -204,15 +203,7 @@ export default defineCommand({
     if (args.maxTurns !== undefined) {
       maxTurns = parsePositiveInt("maxTurns", args.maxTurns);
     }
-    let finders: number | undefined;
-    if (args.finders !== undefined) {
-      finders = parsePositiveInt("finders", args.finders);
-    }
-    if (finders !== undefined && finders > FINDER_LENSES.length) {
-      throw new Error(
-        `--finders can be at most ${FINDER_LENSES.length}, not ${finders}.`,
-      );
-    }
+    const maxFinders = parsePositiveInt("maxFinders", args.maxFinders);
     const sizeLimit = new ChangeSizeLimit({
       maxLines: parsePositiveInt("maxLines", args.maxLines),
       maxFiles: parsePositiveInt("maxFiles", args.maxFiles),
@@ -287,7 +278,7 @@ export default defineCommand({
     const result = await reviewer.review({
       request: args.prompt,
       base: args.base,
-      finders: finders,
+      maxFinders: maxFinders,
       abortSignal: abort.signal,
     });
 

@@ -3,7 +3,7 @@ import { sumStats } from "@/agent/reviewer-agent";
 import type { AgentResult, ReviewerAgent } from "@/agent/reviewer-agent";
 import type { ReviewContext } from "@/context/review-context-collector";
 import type {
-  ReviewPrompt,
+  FinderPrompt,
   ReviewPromptBuilder,
 } from "@/prompt/review-prompt-builder";
 import type { ReviewReporter } from "@/reporter/review-reporter";
@@ -14,7 +14,13 @@ import {
   splitByVerdict,
   verdictsSchema,
 } from "@/review/findings";
-import type { DroppedFinding, Finding, ReviewResult } from "@/review/findings";
+import type {
+  DroppedFinding,
+  Finding,
+  FinderRun,
+  MergedFinding,
+  ReviewResult,
+} from "@/review/findings";
 import { mapLimit } from "@/util/map-limit";
 
 // Small batches so each finding gets the verifier's attention; one session
@@ -86,7 +92,7 @@ export class FindAndVerify {
   // `keep` filters the finders' findings before they're verified.
   async run(
     context: ReviewContext,
-    prompts: ReviewPrompt[],
+    finders: FinderPrompt[],
     {
       abortSignal,
       keep = () => {
@@ -96,7 +102,7 @@ export class FindAndVerify {
   ): Promise<ReviewResult> {
     const startedAt = this.#now();
     const found = await Promise.all(
-      prompts.map((prompt) => {
+      finders.map(({ prompt }) => {
         return this.#agent.run({
           cwd: context.repoRoot,
           prompt: prompt,
@@ -116,6 +122,7 @@ export class FindAndVerify {
       return run.output.findings.filter(keep);
     });
     const merging: AgentResult<unknown>[] = [];
+    const merged: MergedFinding[] = [];
     if (found.length > 1 && findings.length > 1) {
       const deduplicated = await this.#agent.run({
         cwd: context.repoRoot,
@@ -124,7 +131,12 @@ export class FindAndVerify {
         reporter: this.#reporter,
         abortSignal: abortSignal,
       });
-      findings = removeDuplicates(findings, deduplicated.output.duplicates);
+      const deduped = removeDuplicates(
+        findings,
+        deduplicated.output.duplicates,
+      );
+      findings = deduped.kept;
+      merged.push(...deduped.merged);
       merging.push(deduplicated);
     }
 
@@ -158,17 +170,32 @@ export class FindAndVerify {
       });
     }
 
-    const merged = mergeRuns([...found, ...merging, ...verified]);
-    return {
+    const runs = mergeRuns([...found, ...merging, ...verified]);
+    const result: ReviewResult = {
       summary: summary,
       findings: confirmed,
       dropped: dropped,
-      explored: merged.explored,
+      explored: runs.explored,
       // Wall time: the summed durations of parallel runs would overstate it.
       stats: {
-        ...merged.stats,
+        ...runs.stats,
         durationMs: this.#now() - startedAt,
       },
     };
+    if (finders.length > 1) {
+      result.finders = finders.map(({ files }, index) => {
+        const run = found[index];
+        const finder: FinderRun = {
+          findings: run?.output.findings.length ?? 0,
+          stats: run?.stats ?? runs.stats,
+        };
+        if (files) {
+          finder.files = files;
+        }
+        return finder;
+      });
+      result.merged = merged;
+    }
+    return result;
   }
 }

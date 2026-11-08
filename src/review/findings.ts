@@ -71,23 +71,43 @@ export const duplicatesSchema = z.object({
   duplicates: z.array(duplicateSchema),
 });
 
+export interface MergedFinding {
+  finding: Finding;
+  // The finding kept in its place.
+  into: Finding;
+}
+
 // Ids are 1-based, as numberFindings gives them. A finding stays when it's
 // named the duplicate of a missing finding, of itself or of one already gone.
 export function removeDuplicates(findings: Finding[], duplicates: Duplicate[]) {
-  const removed = new Set<number>();
+  const into = new Map<number, number>();
   for (const { id, duplicateOf } of duplicates) {
     const valid =
       id !== duplicateOf &&
       [id, duplicateOf].every((n) => {
         return n >= 1 && n <= findings.length;
       });
-    if (valid && !removed.has(duplicateOf)) {
-      removed.add(id);
+    if (valid && !into.has(duplicateOf)) {
+      into.set(id, duplicateOf);
     }
   }
-  return findings.filter((_, index) => {
-    return !removed.has(index + 1);
+  const kept: Finding[] = [];
+  const merged: MergedFinding[] = [];
+  findings.forEach((finding, index) => {
+    const target = findings[(into.get(index + 1) ?? 0) - 1];
+    if (target) {
+      merged.push({
+        finding: finding,
+        into: target,
+      });
+    } else {
+      kept.push(finding);
+    }
   });
+  return {
+    kept: kept,
+    merged: merged,
+  };
 }
 
 export interface DroppedFinding {
@@ -96,12 +116,23 @@ export interface DroppedFinding {
   reason: string;
 }
 
+// One parallel finder's share of a chunked review, for tuning the split.
+export interface FinderRun {
+  // Absent for the description finder.
+  files?: string[];
+  findings: number;
+  stats: RunStats;
+}
+
 export interface ReviewResult {
   summary: string;
   findings: Finding[];
   dropped: DroppedFinding[];
   explored: Explored;
   stats: RunStats;
+  // Only when parallel finders ran.
+  finders?: FinderRun[];
+  merged?: MergedFinding[];
 }
 
 // Ids are 1-based positions, the numbering the verifier is shown.

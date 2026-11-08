@@ -266,6 +266,28 @@ describe("ReviewCommentFormatter saved review", () => {
     expect(readSavedReview(formatter.review(result))).toEqual(expected);
   });
 
+  test("leaves the per-finder detail out of the saved review", () => {
+    const result = review([finding("low", "Claims a cache.", "description")]);
+
+    const body = new ReviewCommentFormatter(triggered).review({
+      ...result,
+      finders: [
+        {
+          files: ["a.ts"],
+          findings: 1,
+          stats: result.stats,
+        },
+      ],
+      merged: [],
+    });
+
+    const encoded = /diffcop:saved=(\S+)/.exec(body)?.[1] ?? "";
+    const saved = Buffer.from(encoded, "base64").toString("utf8");
+    expect(saved).toContain("Claims a cache.");
+    expect(saved).not.toContain('"finders"');
+    expect(saved).not.toContain('"merged"');
+  });
+
   test("renders a re-checked review from what was saved, beside the re-check's stats", () => {
     const saved: SavedReview = {
       version: 1,
