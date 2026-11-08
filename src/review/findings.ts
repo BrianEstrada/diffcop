@@ -119,7 +119,7 @@ export interface DroppedFinding {
 
 // One parallel finder's share of a chunked review, for tuning the split.
 export interface FinderRun {
-  // Absent for the description finder.
+  // Absent for the whole-diff finder.
   files?: string[];
   findings: number;
   // Absent when the finder failed; `error` says why.

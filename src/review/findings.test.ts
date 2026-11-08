@@ -267,7 +267,7 @@ describe("splitByVerdict", () => {
     });
   });
 
-  test("drops findings marked duplicates of each other rather than losing both", () => {
+  test("reports findings marked duplicates of each other as dropped", () => {
     expect(
       splitByVerdict(
         [finding("A"), finding("B")],
