@@ -19,7 +19,7 @@ export function currentPath(path: string) {
 }
 
 // The source file a test belongs with: `foo.test.ts`, `foo_test.go`, `foo_spec.rb`,
-// `test_foo.py`, `FooTest.kt` under src/test and `__tests__/foo.js` all key as `foo`.
+// `test_foo.py`, `FooTest.kt` under Gradle/Maven src/test and `__tests__/foo.js` all key as `foo`.
 export function sourceKey(path: string) {
   const current = currentPath(path);
   const dir = dirname(current)
