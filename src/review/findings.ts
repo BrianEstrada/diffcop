@@ -77,8 +77,8 @@ export interface MergedFinding {
   into: Finding;
 }
 
-// Ids are 1-based, as numberFindings gives them. A finding stays when it's
-// named the duplicate of a missing finding, of itself or of one already gone.
+// Ids are 1-based. A pair is skipped when its target is missing, itself or already
+// gone, or when a finding was already merged into it, so merges never chain.
 export function removeDuplicates(findings: Finding[], duplicates: Duplicate[]) {
   const into = new Map<number, number>();
   for (const { id, duplicateOf } of duplicates) {
@@ -87,7 +87,8 @@ export function removeDuplicates(findings: Finding[], duplicates: Duplicate[]) {
       [id, duplicateOf].every((n) => {
         return n >= 1 && n <= findings.length;
       });
-    if (valid && !into.has(duplicateOf)) {
+    const isTarget = [...into.values()].includes(id);
+    if (valid && !into.has(duplicateOf) && !isTarget) {
       into.set(id, duplicateOf);
     }
   }

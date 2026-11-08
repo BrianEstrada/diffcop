@@ -369,6 +369,29 @@ describe("removeDuplicates", () => {
     ).toEqual([finding("B"), finding("C")]);
   });
 
+  test("keeps a finding another one was already merged into", () => {
+    expect(
+      removeDuplicates(findings, [
+        {
+          id: 3,
+          duplicateOf: 1,
+        },
+        {
+          id: 1,
+          duplicateOf: 2,
+        },
+      ]),
+    ).toEqual({
+      kept: [finding("A"), finding("B")],
+      merged: [
+        {
+          finding: finding("C"),
+          into: finding("A"),
+        },
+      ],
+    });
+  });
+
   test("ignores a duplicate of itself or of a finding that doesn't exist", () => {
     expect(
       removeDuplicates(findings, [
