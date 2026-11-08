@@ -99,7 +99,7 @@ jobs:
 
       # Optional: lets the reviewer read your dependencies' code. Scripts are skipped, so no
       # dependency code runs in a job that holds the Claude secrets.
-      # - run: pnpm ci --ignore-scripts
+      # - run: npm ci --ignore-scripts
 
       - uses: BrianEstrada/diffcop@main
         with:
@@ -120,10 +120,10 @@ jobs:
 The action installs Bun, Node and pnpm on the runner, so later steps in the same job see those
 versions.
 
-Install your dependencies before the action, as the example does with `pnpm ci`, so the reviewer can
-check how your code uses a library instead of guessing. Use your own package manager's command
-(`pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, …, after its setup action) and
-keep `--ignore-scripts`.
+Install your dependencies before the action, as the commented step does with `npm ci`, so the
+reviewer can check how your code uses a library instead of guessing. Use your own package manager's
+command (`pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, …, after its setup
+action) and keep `--ignore-scripts`.
 
 ## How a review works
 
