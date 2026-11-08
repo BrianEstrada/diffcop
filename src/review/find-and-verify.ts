@@ -159,20 +159,20 @@ export class FindAndVerify {
     const merging: AgentResult<unknown>[] = [];
     const merged: MergedFinding[] = [];
     if (found.length > 1 && findings.length > 1) {
-      const deduplicated = await this.#agent.run({
-        cwd: context.repoRoot,
-        prompt: this.#promptBuilder.buildDeduplication(findings),
-        output: duplicatesSchema,
-        reporter: this.#reporter,
-        abortSignal: abortSignal,
-      });
-      const deduped = removeDuplicates(
+      const deduplicated = await this.#deduplicate(
+        context,
         findings,
-        deduplicated.output.duplicates,
+        abortSignal,
       );
-      findings = deduped.kept;
-      merged.push(...deduped.merged);
-      merging.push(deduplicated);
+      if (deduplicated) {
+        const deduped = removeDuplicates(
+          findings,
+          deduplicated.output.duplicates,
+        );
+        findings = deduped.kept;
+        merged.push(...deduped.merged);
+        merging.push(deduplicated);
+      }
     }
 
     const verified: AgentResult<unknown>[] = [];
@@ -238,5 +238,30 @@ export class FindAndVerify {
       result.merged = merged;
     }
     return result;
+  }
+
+  // Dedupe only trims repeats, so a failed session leaves the findings as they are.
+  async #deduplicate(
+    context: ReviewContext,
+    findings: Finding[],
+    abortSignal: AbortSignal | undefined,
+  ) {
+    try {
+      return await this.#agent.run({
+        cwd: context.repoRoot,
+        prompt: this.#promptBuilder.buildDeduplication(findings),
+        output: duplicatesSchema,
+        reporter: this.#reporter,
+        abortSignal: abortSignal,
+      });
+    } catch (error) {
+      if (abortSignal?.aborted) {
+        throw error;
+      }
+      await this.#reporter.warning(
+        `Merging duplicate findings failed, so some may be listed twice: ${toError(error).message}`,
+      );
+      return undefined;
+    }
   }
 }

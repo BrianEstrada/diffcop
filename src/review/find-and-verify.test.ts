@@ -160,6 +160,46 @@ describe("FindAndVerify", () => {
     ]);
   });
 
+  test("verifies the findings undeduplicated when dedupe fails, and warns", async () => {
+    warnings.length = 0;
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("A")],
+      },
+      {
+        summary: "",
+        findings: [finding("B")],
+      },
+      new Error("never submitted"),
+      {
+        verdicts: [
+          {
+            id: 1,
+            verdict: "confirmed",
+            reason: "Fails.",
+          },
+          {
+            id: 2,
+            verdict: "confirmed",
+            reason: "Fails.",
+          },
+        ],
+      },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(context, [prompt, prompt]);
+
+    expect(result.findings).toEqual([finding("A"), finding("B")]);
+    expect(warnings).toEqual([
+      "Merging duplicate findings failed, so some may be listed twice: never submitted",
+    ]);
+  });
+
   test("fails when every finder fails", async () => {
     const agent = new FakeAgent([new Error("first"), new Error("second")]);
 
