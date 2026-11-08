@@ -186,7 +186,7 @@ export class FindAndVerify {
       result.finders = finders.map(({ files }, index) => {
         const run = found[index];
         const finder: FinderRun = {
-          findings: run?.output.findings.length ?? 0,
+          findings: run?.output.findings.filter(keep).length ?? 0,
           stats: run?.stats ?? runs.stats,
         };
         if (files) {
