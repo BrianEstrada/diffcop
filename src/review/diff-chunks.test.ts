@@ -133,6 +133,15 @@ describe("splitDiffByFile", () => {
     );
   });
 
+  test("ends the last section with a newline, as git's trimmed output doesn't", () => {
+    expect(
+      splitDiffByFile(diff.trimEnd(), [
+        changed("a.ts", 1),
+        changed("b.ts", 1),
+      ])?.get("b.ts"),
+    ).toBe("diff --git a/b.ts b/b.ts\n+diff --git inside a line\n");
+  });
+
   test("gives up when the sections don't line up with the files", () => {
     expect(splitDiffByFile(diff, [changed("a.ts", 1)])).toBeUndefined();
   });

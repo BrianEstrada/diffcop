@@ -94,7 +94,8 @@ export function splitDiffByFile(diff: string, changedFiles: ChangedFile[]) {
   }
   return new Map(
     changedFiles.map((file, index) => {
-      return [file.path, sections[index] ?? ""];
+      // Sections are joined in any order, and git's trimmed output drops the last one's newline.
+      return [file.path, (sections[index] ?? "").replace(/\n?$/, "\n")];
     }),
   );
 }
