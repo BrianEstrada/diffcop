@@ -198,6 +198,21 @@ describe("ReviewPromptBuilder.buildVerification", () => {
     expect(prompt.instructions).not.toContain("only the changes to the files");
   });
 
+  test("shows the whole diff when the findings cite every changed file", () => {
+    // Trimmed, as git returns it.
+    const trimmed = {
+      ...context,
+      diff: context.diff.trimEnd(),
+    };
+    const prompt = builder.buildVerification(trimmed, [
+      at("a/x.ts"),
+      at("b/y.ts"),
+    ]);
+
+    expect(prompt.content[0]).toContain(trimmed.diff);
+    expect(prompt.instructions).not.toContain("only the changes to the files");
+  });
+
   test("shows the whole diff for a description finding", () => {
     const prompt = builder.buildVerification(context, [
       at("a/x.ts", "description"),

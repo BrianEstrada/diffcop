@@ -275,8 +275,8 @@ export class ReviewPromptBuilder {
     };
   }
 
-  // Only the cited files' diff, so a batch doesn't re-read the whole change. The
-  // whole diff when a finding is about the description or cites an unchanged file.
+  // Only the cited files' diff, so a batch doesn't re-read the whole change. The whole diff
+  // when a finding is about the description or an unchanged file, or they cite every file.
   #diffFor(context: ReviewContext, findings: Finding[]) {
     const fileDiffs = splitDiffByFile(context.diff, context.changedFiles);
     if (!fileDiffs) {
@@ -300,7 +300,8 @@ export class ReviewPromptBuilder {
     const wholeDiff = findings.some((finding) => {
       return finding.scope === "description";
     });
-    if (wholeDiff || sections.includes(undefined)) {
+    const everyFile = files.length === byPath.size;
+    if (wholeDiff || everyFile || sections.includes(undefined)) {
       return context.diff;
     }
     return sections.join("");
