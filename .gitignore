@@ -44,3 +44,6 @@ cc-proj/
 
 # AI SDK harness state (normally under $HOME)
 .ai-sdk-harness/
+
+# Local review benchmark
+.benchmarks/
