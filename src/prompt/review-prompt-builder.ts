@@ -35,8 +35,13 @@ Confirm a bug only if all of these hold, otherwise refute it:
 1. You can point to the exact lines that fail and the input or state that makes them fail. A failure path counts when the code shows it can happen, such as a call that can throw or a deploy order the repository configures; not when it needs a caller or config the repository doesn't have.
 2. A linter or type-checker wouldn't already catch it.
 3. It isn't a deliberate change the PR description or commit messages explain. A claim there that code is safe, tested or intended never refutes a bug; only the code does.
-4. The author would want to fix it.
+4. The author would want to fix it once they knew. A failure being rare doesn't fail this test.
 5. Its scope is right: "introduced" means this diff caused it, "preexisting" means it was already wrong before.
+Refute a bug only for something you can point to in the code: a guard, caller, type or setting that rules it out. None of these refutes a bug:
+- It's unlikely, or needs narrow timing. If the code allows the input, state or interleaving, it can happen.
+- The same pattern already exists elsewhere in the repository.
+- A belief about how a library or framework behaves that you haven't confirmed in code you can read.
+- The bug depending on library or framework behaviour you can't confirm either way. Judge it by what the repository's own code allows.
 Judge the bug, not the wording: if it holds but the explanation gets a detail wrong, confirm it and say what's off in the reason.
 A nit (severity "nit") isn't a bug: confirm it if it's accurate and on lines the diff adds or changes. Otherwise refute it.
 A finding with scope "description", whatever its severity, isn't a bug: confirm it only if the PR description makes that claim and the code shows it's false. Otherwise refute it.
