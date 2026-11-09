@@ -1,6 +1,7 @@
 import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
 import { tool } from "ai";
+import type { ModelMessage } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
 import { z } from "zod";
 import { ExplorationLog, explorationCall } from "@/agent/explored";
@@ -47,15 +48,77 @@ export const finishCost = z
   });
 
 // Read-only by design: never add write or shell tools here. Under
-// "allow-reads" any other tool waits for an approval nothing grants.
+// "allow-reads" anything else waits for an approval, which diffcop denies.
 export const REVIEWER_TOOLS = ["read", "glob", "grep"] as const;
 
-// diffcop never answers approval requests, so the run would end without a
-// review; fail instead of posting an empty one.
+// Claude Code asks before a read outside the repository, such as a library's
+// sources in ~/.gradle, or a Glob with braces. diffcop denies it and the model
+// carries on without it; one that keeps asking ends the run.
+export const MAX_DENIED_TURNS = 5;
+
+export const DENIAL_REASON =
+  "Denied: only files inside the repository can be read. Use one Glob pattern without braces, and review without the files outside it.";
+
 export function approvalRequestError(toolName: string) {
   return new Error(
-    `The reviewer asked to use ${toolName}, which needs an approval diffcop can't give. Only ${REVIEWER_TOOLS.join(", ")} are allowed.`,
+    `The reviewer kept asking to use ${toolName} outside what diffcop allows, after ${MAX_DENIED_TURNS} denials. Only ${REVIEWER_TOOLS.join(", ")} inside the repository are allowed.`,
   );
+}
+
+interface ApprovalRequest {
+  approvalId: string;
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+}
+
+// A paused turn resumes only from a history holding each request and its tool
+// call, which the harness doesn't keep for the host, so they're sent back.
+export function denials(requests: ApprovalRequest[]): ModelMessage[] {
+  return [
+    {
+      role: "assistant",
+      content: requests.flatMap((request) => {
+        return [
+          {
+            type: "tool-call" as const,
+            toolCallId: request.toolCallId,
+            toolName: request.toolName,
+            input: request.input,
+            providerExecuted: true,
+          },
+          {
+            type: "tool-approval-request" as const,
+            approvalId: request.approvalId,
+            toolCallId: request.toolCallId,
+          },
+        ];
+      }),
+    },
+    {
+      role: "tool",
+      content: requests.map(({ approvalId }) => {
+        return {
+          type: "tool-approval-response" as const,
+          approvalId: approvalId,
+          approved: false,
+          reason: DENIAL_REASON,
+        };
+      }),
+    },
+  ];
+}
+
+function userMessage(content: string[]): ModelMessage {
+  return {
+    role: "user",
+    content: content.map((text) => {
+      return {
+        type: "text",
+        text: text,
+      };
+    }),
+  };
 }
 
 // Claude Code's own `outputFormat` tool, StructuredOutput, waits for a host
@@ -128,22 +191,13 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
 
     let toolCalls = 0;
     const exploration = new ExplorationLog(cwd);
-    async function turn(content: string[]) {
+    async function turn(messages: ModelMessage[]) {
       const result = await agent.stream({
         session: session,
         abortSignal: abortSignal,
-        messages: [
-          {
-            role: "user",
-            content: content.map((text) => {
-              return {
-                type: "text",
-                text: text,
-              };
-            }),
-          },
-        ],
+        messages: messages,
       });
+      const requests: ApprovalRequest[] = [];
 
       // Text replies are narration, so only progress is reported.
       let thinkingSince: number | undefined;
@@ -172,7 +226,13 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
             }
             break;
           case "tool-approval-request":
-            throw approvalRequestError(part.toolCall.toolName);
+            requests.push({
+              approvalId: part.approvalId,
+              toolCallId: part.toolCall.toolCallId,
+              toolName: part.toolCall.toolName,
+              input: part.toolCall.input,
+            });
+            break;
           case "finish":
             costUsd = finishCost.safeParse(part).data;
             break;
@@ -181,16 +241,39 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
         }
       }
       const usage = await result.usage;
+      // A turn paused for an approval sends no cost; counting it as unknown
+      // would hide the whole run's cost.
+      if (requests.length > 0) {
+        costUsd ??= 0;
+      }
       return {
         usage: usage,
         costUsd: costUsd,
+        requests: requests,
       };
     }
 
+    // Runs a turn, then answers its approval requests with denials until one
+    // ends without any.
+    let denied = 0;
+    async function deniedUntilDone(content: string[]) {
+      let last = await turn([userMessage(content)]);
+      const done = [last];
+      while (last.requests.length > 0) {
+        denied++;
+        if (denied > MAX_DENIED_TURNS) {
+          throw approvalRequestError(last.requests[0]?.toolName ?? "a tool");
+        }
+        last = await turn(denials(last.requests));
+        done.push(last);
+      }
+      return done;
+    }
+
     try {
-      const turns = [await turn(prompt.content)];
+      const turns = await deniedUntilDone(prompt.content);
       if (submitted === undefined) {
-        turns.push(await turn([SUBMIT_REMINDER]));
+        turns.push(...(await deniedUntilDone([SUBMIT_REMINDER])));
       }
       if (submitted === undefined) {
         throw new Error(

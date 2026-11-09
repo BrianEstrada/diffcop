@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   approvalRequestError,
   ClaudeCodeReviewerAgent,
+  DENIAL_REASON,
   finishCost,
+  MAX_DENIED_TURNS,
   REVIEWER_TOOLS,
   SUBMIT_REMINDER,
   SUBMIT_TOOL,
@@ -20,8 +22,13 @@ interface FakeSettings {
   tools: Record<string, { execute: (input: Answer) => string }>;
 }
 
+// An approval request a turn pauses on, instead of finishing.
+interface Asks {
+  asks: string;
+}
+
 // What each turn submits; undefined ends the turn without submitting.
-let turns: (Answer | undefined)[] = [];
+let turns: (Answer | Asks | undefined)[] = [];
 let sent: unknown[] = [];
 let instructions: string[] = [];
 
@@ -44,6 +51,27 @@ await mock.module("@ai-sdk/harness/agent", () => {
         sent.push(messages);
         const answer = turns.shift();
         const parts: unknown[] = [];
+        if (answer !== undefined && "asks" in answer) {
+          parts.push({
+            type: "tool-approval-request",
+            approvalId: `approval-${sent.length}`,
+            toolCall: {
+              toolCallId: `call-${sent.length}`,
+              toolName: answer.asks,
+              input: { path: "/elsewhere" },
+            },
+          });
+          return {
+            stream: (async function* () {
+              yield* parts;
+            })(),
+            usage: Promise.resolve({
+              inputTokens: 10,
+              outputTokens: 5,
+              inputTokenDetails: { cacheReadTokens: 2 },
+            }),
+          };
+        }
         if (answer !== undefined) {
           parts.push({
             type: "tool-call",
@@ -91,8 +119,8 @@ describe("REVIEWER_TOOLS", () => {
 
 describe("approvalRequestError", () => {
   test("names the denied tool and the allowed ones", () => {
-    expect(approvalRequestError("Bash").message).toBe(
-      "The reviewer asked to use Bash, which needs an approval diffcop can't give. Only read, glob, grep are allowed.",
+    expect(approvalRequestError("glob").message).toBe(
+      "The reviewer kept asking to use glob outside what diffcop allows, after 5 denials. Only read, glob, grep inside the repository are allowed.",
     );
   });
 });
@@ -174,6 +202,51 @@ describe("ClaudeCodeReviewerAgent", () => {
       outputTokens: 10,
       costUsd: 0.2,
     });
+  });
+
+  test("denies a read outside the repository and lets the reviewer carry on", async () => {
+    turns = [{ asks: "glob" }, { ok: true }];
+    const result = await review();
+    expect(result.output).toEqual({ ok: true });
+    expect(sent[1]).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-1",
+            toolName: "glob",
+            input: { path: "/elsewhere" },
+            providerExecuted: true,
+          },
+          {
+            type: "tool-approval-request",
+            approvalId: "approval-1",
+            toolCallId: "call-1",
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-approval-response",
+            approvalId: "approval-1",
+            approved: false,
+            reason: DENIAL_REASON,
+          },
+        ],
+      },
+    ]);
+    // The paused turn sends no cost, so only the finished one counts.
+    expect(result.stats.costUsd).toBe(0.1);
+  });
+
+  test("fails when the reviewer keeps asking after every denial", async () => {
+    turns = Array.from({ length: MAX_DENIED_TURNS + 1 }, () => {
+      return { asks: "glob" };
+    });
+    expect(review()).rejects.toThrow(approvalRequestError("glob").message);
   });
 
   test("fails when the reviewer ends twice without submitting", async () => {
