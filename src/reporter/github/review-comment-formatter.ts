@@ -80,7 +80,8 @@ export class ReviewCommentFormatter {
     ]);
   }
 
-  review(result: ReviewResult) {
+  // Leaves out the per-finder detail, which the comment doesn't show, to keep the saved review small.
+  review({ finders: _finders, merged: _merged, ...result }: ReviewResult) {
     return this.savedReview({
       version: 1,
       headSha: this.#pr.headSha,

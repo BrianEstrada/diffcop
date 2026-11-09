@@ -48,6 +48,7 @@ diffcop review "focus on error handling"
 diffcop review "review this code" --base origin/develop   # default: origin/HEAD, then main
 diffcop review "review this code" --cwd ../other-repo
 diffcop review "quick pass" --effort low                  # faster, shallower review
+diffcop review "review this code" --maxChunks 1           # one finder, whatever the diff's size
 diffcop review "review this code" --reporter json | jq .findings
 ```
 
@@ -96,6 +97,10 @@ jobs:
           fetch-depth: 0 # diffcop needs the merge base with the PR's base branch
           persist-credentials: false
 
+      # Optional: lets the reviewer read your dependencies' code. Scripts are skipped, so no
+      # dependency code runs in a job that holds the Claude secrets.
+      # - run: npm ci --ignore-scripts
+
       - uses: BrianEstrada/diffcop@main
         with:
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -109,16 +114,26 @@ jobs:
 | `github-token`            | `github.token`                                                       | Reads the PR and posts the comment.                   |
 | `prompt`                  | Review this pull request for bugs, security issues, and regressions. | What to ask the reviewer.                             |
 | `effort`                  | `high`                                                               | `low` to `max`. Empty uses Claude Code's default.     |
+| `max-chunks`              | `6`                                                                  | Most ~400-line chunks a diff is split into.           |
 | `debug`                   | `false`                                                              | Also log the reviewer's tool calls and thinking time. |
 
 The action installs Bun, Node and pnpm on the runner, so later steps in the same job see those
 versions.
 
+Install your dependencies before the action, as the commented step does with `npm ci`, so the
+reviewer can check how your code uses a library instead of guessing. Use your own package manager's
+command (`pnpm install --frozen-lockfile`, `bun install --frozen-lockfile`, …, after its setup
+action) and keep `--ignore-scripts`.
+
 ## How a review works
 
 The first pass looks for bugs the diff introduced, plus a few nits, and on a PR checks that the
-description matches the code. A second, fresh session then tries to disprove each finding, and
-only what survives is reported.
+description matches the code. A diff over 400 changed lines is split by path into chunks of about
+400 lines, tests kept with their source, up to six (set it with `--maxChunks`; past that, chunks
+grow). Each chunk gets two finders of its own, and one more finder reviews the whole diff for bugs
+that span chunks. Their findings are merged, and a fresh session then tries to disprove each one.
+Only what survives is reported. If one finder or the merge step fails, the review goes on without
+it and says so in a warning.
 
 The review opens with one headline:
 

@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import type { Repository } from "@/context/repository";
+import type { ChangedFile, Repository } from "@/context/repository";
 
 function lines(text: string) {
   return text.split("\n").filter(Boolean);
@@ -49,15 +49,36 @@ export class GitRepository implements Repository {
   }
 
   // Covers the working tree, not just commits, so uncommitted edits count.
+  // `-z` keeps paths unquoted; without it git C-quotes non-ASCII and special characters.
   async changedFilesSince(ref: string) {
-    return lines(await this.#run("diff", "--numstat", ref)).map((line) => {
-      const [additions = "0", deletions = "0", path = ""] = line.split("\t");
-      return {
-        path: path,
+    const fields = (await this.#run("diff", "--numstat", "-z", ref)).split(
+      "\0",
+    );
+    const files: ChangedFile[] = [];
+    let index = 0;
+    while (index < fields.length) {
+      // Only the first two tabs separate fields; a path can hold more.
+      const [additions = "0", deletions = "0", ...pathParts] = (
+        fields[index] ?? ""
+      ).split("\t");
+      const path = pathParts.join("\t");
+      index++;
+      if (additions === "") {
+        continue;
+      }
+      // A rename leaves the path empty and gives the old and new paths as the next two fields.
+      let current = path;
+      if (path === "") {
+        current = `${fields[index] ?? ""} => ${fields[index + 1] ?? ""}`;
+        index += 2;
+      }
+      files.push({
+        path: current,
         additions: Number(additions) || 0,
         deletions: Number(deletions) || 0,
-      };
-    });
+      });
+    }
+    return files;
   }
 
   async diffSince(ref: string) {

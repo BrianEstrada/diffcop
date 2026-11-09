@@ -112,6 +112,57 @@ describe("GitRepository", () => {
     expect(diff).toContain("+new");
   });
 
+  test("changedFilesSince gives the real path of files git quotes, and of a rename", async () => {
+    const quoted = await realpath(
+      await mkdtemp(join(tmpdir(), "diffcop-quoted-")),
+    );
+    async function inQuoted(...args: string[]) {
+      await $`git -c user.name=test -c user.email=test@example.com -c commit.gpgsign=false ${args}`
+        .cwd(quoted)
+        .quiet();
+    }
+    try {
+      await inQuoted("init", "-q", "-b", "main");
+      await Bun.write(join(quoted, "old.txt"), "same\n");
+      await inQuoted("add", ".");
+      await inQuoted("commit", "-q", "-m", "initial");
+      await inQuoted("mv", "old.txt", "new.txt");
+      await Bun.write(join(quoted, "café.txt"), "one\n");
+      await Bun.write(join(quoted, 'say "hi".txt'), "two\n");
+      await Bun.write(join(quoted, "tab\tname.txt"), "three\n");
+      await inQuoted("add", ".");
+
+      const repository = new GitRepository(quoted);
+      expect(await repository.changedFilesSince("HEAD")).toEqual([
+        {
+          path: "café.txt",
+          additions: 1,
+          deletions: 0,
+        },
+        {
+          path: "old.txt => new.txt",
+          additions: 0,
+          deletions: 0,
+        },
+        {
+          path: 'say "hi".txt',
+          additions: 1,
+          deletions: 0,
+        },
+        {
+          path: "tab\tname.txt",
+          additions: 1,
+          deletions: 0,
+        },
+      ]);
+    } finally {
+      await rm(quoted, {
+        recursive: true,
+        force: true,
+      });
+    }
+  });
+
   test("mergeBase rejects an unknown ref", async () => {
     const repository = new GitRepository(dir);
     expect(repository.mergeBase("no-such-ref")).rejects.toThrow();

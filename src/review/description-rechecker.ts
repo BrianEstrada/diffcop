@@ -77,7 +77,14 @@ export class DescriptionRechecker {
     const context = await this.#collector.collect(base);
     const rechecked = await this.#findAndVerify.run(
       context,
-      this.#promptBuilder.buildDescriptionRecheck(context, previous),
+      [
+        {
+          prompt: this.#promptBuilder.buildDescriptionRecheck(
+            context,
+            previous,
+          ),
+        },
+      ],
       {
         abortSignal: abortSignal,
         keep: isDescriptionFinding,

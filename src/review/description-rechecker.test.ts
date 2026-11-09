@@ -195,6 +195,7 @@ function rechecker(
   repository = new FakeRepository(),
 ) {
   const promptBuilder = new ReviewPromptBuilder();
+  let clockReads = 0;
   return new DescriptionRechecker(
     new ReviewContextCollector(repository, {
       fetch: async () => {
@@ -202,7 +203,10 @@ function rechecker(
       },
     }),
     promptBuilder,
-    new FindAndVerify(promptBuilder, agent, silent),
+    // Read at the start and end of the run: the re-check takes 10s of wall time.
+    new FindAndVerify(promptBuilder, agent, silent, () => {
+      return clockReads++ % 2 === 0 ? 0 : 10_000;
+    }),
     store,
   );
 }

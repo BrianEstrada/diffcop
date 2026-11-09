@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   findingsSchema,
   numberFindings,
+  removeDuplicates,
   splitByVerdict,
   verdictsSchema,
 } from "@/review/findings";
@@ -239,6 +240,177 @@ describe("splitByVerdict", () => {
           reason: "No verdict returned",
         },
       ],
+    });
+  });
+
+  test("leaves out a duplicate, its original standing for it", () => {
+    expect(
+      splitByVerdict(
+        [finding("A"), finding("A again")],
+        [
+          {
+            id: 1,
+            verdict: "confirmed",
+            reason: "Fails on [].",
+          },
+          {
+            id: 2,
+            verdict: "duplicate",
+            duplicateOf: 1,
+            reason: "Same as 1.",
+          },
+        ],
+      ),
+    ).toEqual({
+      confirmed: [finding("A")],
+      dropped: [],
+    });
+  });
+
+  test("reports findings marked duplicates of each other as dropped", () => {
+    expect(
+      splitByVerdict(
+        [finding("A"), finding("B")],
+        [
+          {
+            id: 1,
+            verdict: "duplicate",
+            duplicateOf: 2,
+            reason: "",
+          },
+          {
+            id: 2,
+            verdict: "duplicate",
+            duplicateOf: 1,
+            reason: "",
+          },
+        ],
+      ).dropped,
+    ).toEqual([
+      {
+        finding: finding("A"),
+        reason: "Marked a duplicate of another duplicate",
+      },
+      {
+        finding: finding("B"),
+        reason: "Marked a duplicate of another duplicate",
+      },
+    ]);
+  });
+
+  test("treats a duplicate of itself or of no finding as unconfirmed", () => {
+    expect(
+      splitByVerdict(
+        [finding("A"), finding("B")],
+        [
+          {
+            id: 1,
+            verdict: "duplicate",
+            duplicateOf: 1,
+            reason: "Same.",
+          },
+          {
+            id: 2,
+            verdict: "duplicate",
+            reason: "Same.",
+          },
+        ],
+      ),
+    ).toEqual({
+      confirmed: [],
+      dropped: [
+        {
+          finding: finding("A"),
+          reason: "Same.",
+        },
+        {
+          finding: finding("B"),
+          reason: "Same.",
+        },
+      ],
+    });
+  });
+});
+
+describe("removeDuplicates", () => {
+  const findings = [finding("A"), finding("B"), finding("C")];
+
+  test("merges each finding named a duplicate into the one it repeats", () => {
+    expect(
+      removeDuplicates(findings, [
+        {
+          id: 3,
+          duplicateOf: 1,
+        },
+      ]),
+    ).toEqual({
+      kept: [finding("A"), finding("B")],
+      merged: [
+        {
+          finding: finding("C"),
+          into: finding("A"),
+        },
+      ],
+    });
+  });
+
+  test("keeps one of two findings named duplicates of each other", () => {
+    expect(
+      removeDuplicates(findings, [
+        {
+          id: 1,
+          duplicateOf: 2,
+        },
+        {
+          id: 2,
+          duplicateOf: 1,
+        },
+      ]).kept,
+    ).toEqual([finding("B"), finding("C")]);
+  });
+
+  test("keeps a finding another one was already merged into", () => {
+    expect(
+      removeDuplicates(findings, [
+        {
+          id: 3,
+          duplicateOf: 1,
+        },
+        {
+          id: 1,
+          duplicateOf: 2,
+        },
+      ]),
+    ).toEqual({
+      kept: [finding("A"), finding("B")],
+      merged: [
+        {
+          finding: finding("C"),
+          into: finding("A"),
+        },
+      ],
+    });
+  });
+
+  test("ignores a duplicate of itself or of a finding that doesn't exist", () => {
+    expect(
+      removeDuplicates(findings, [
+        {
+          id: 1,
+          duplicateOf: 1,
+        },
+        {
+          id: 2,
+          duplicateOf: 4,
+        },
+        {
+          id: 0,
+          duplicateOf: 3,
+        },
+      ]),
+    ).toEqual({
+      kept: findings,
+      merged: [],
     });
   });
 });

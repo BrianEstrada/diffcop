@@ -11,8 +11,12 @@ import type { ReviewResult } from "@/review/findings";
 export interface ReviewRequest {
   request: string;
   base?: string;
+  // Chunks of the diff, each with finders of its own; past this many, chunks grow.
+  maxChunks?: number;
   abortSignal?: AbortSignal;
 }
+
+export const DEFAULT_MAX_CHUNKS = 6;
 
 // Modeled on claude-code-action's context → prompt → agent pipeline.
 export class CodeReviewer {
@@ -28,10 +32,16 @@ export class CodeReviewer {
     agent: ReviewerAgent,
     reporter: ReviewReporter,
     sizeLimit: ChangeSizeLimit,
+    now?: () => number,
   ) {
     this.#collector = collector;
     this.#promptBuilder = promptBuilder;
-    this.#findAndVerify = new FindAndVerify(promptBuilder, agent, reporter);
+    this.#findAndVerify = new FindAndVerify(
+      promptBuilder,
+      agent,
+      reporter,
+      now,
+    );
     this.#reporter = reporter;
     this.#sizeLimit = sizeLimit;
   }
@@ -39,6 +49,7 @@ export class CodeReviewer {
   async review({
     request,
     base,
+    maxChunks = DEFAULT_MAX_CHUNKS,
     abortSignal,
   }: ReviewRequest): Promise<ReviewResult> {
     await this.#reporter.started();
@@ -55,7 +66,7 @@ export class CodeReviewer {
       }
       const result = await this.#findAndVerify.run(
         context,
-        this.#promptBuilder.build(context, request),
+        this.#promptBuilder.buildFinders(context, request, maxChunks),
         { abortSignal: abortSignal },
       );
       await this.#reporter.completed(result);
