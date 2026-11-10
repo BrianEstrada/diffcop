@@ -32,7 +32,7 @@ const ledger: ReviewLedger = {
           scope: "introduced",
           title: "A",
           status: "reported",
-          answer: "Won't fix: the sibling test does the same.",
+          answer: "Won't fix: the other handlers do the same.",
         },
       ],
     },

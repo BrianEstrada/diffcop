@@ -12,7 +12,7 @@ class FakeRepository implements Repository {
     return "/repo";
   }
   readonly mergeBaseCalls: string[] = [];
-  readonly deltaCalls: [string, string[]][] = [];
+  readonly deltaCalls: string[] = [];
   readonly #knownRefs: string[];
   readonly #ancestors: string[];
 
@@ -63,17 +63,21 @@ class FakeRepository implements Repository {
     return this.#ancestors.includes(sha);
   }
 
-  async diffOfFilesSince(ref: string, paths: string[]) {
-    this.deltaCalls.push([ref, paths]);
-    return [
-      "diff --git a/a.ts b/a.ts",
-      "--- a/a.ts",
-      "+++ b/a.ts",
-      "@@ -4,2 +4,3 @@",
-      " kept",
-      "+added",
-      " kept",
-    ].join("\n");
+  async patchSince(ref: string) {
+    this.deltaCalls.push(ref);
+    return ["a.ts", "merged-from-main.ts"]
+      .map((path) => {
+        return [
+          `diff --git a/${path} b/${path}`,
+          `--- a/${path}`,
+          `+++ b/${path}`,
+          "@@ -4,2 +4,3 @@",
+          " kept",
+          "+added",
+          " kept",
+        ].join("\n");
+      })
+      .join("\n");
   }
 
   async hashObject(path: string) {
@@ -273,9 +277,11 @@ describe("ReviewContextCollector on a re-review", () => {
       { rounds: rounds },
     );
 
-    expect(repository.deltaCalls).toEqual([["bbbbbbb", ["a.ts"]]]);
+    expect(repository.deltaCalls).toEqual(["bbbbbbb"]);
     expect(previous?.rounds).toBe(rounds);
     expect(previous?.delta?.since).toBe("bbbbbbb");
+    expect([...(previous?.delta?.files.keys() ?? [])]).toEqual(["a.ts"]);
+    expect(previous?.delta?.diff).not.toContain("merged-from-main.ts");
     expect([...(previous?.delta?.files.get("a.ts")?.touched ?? [])]).toEqual([
       5,
     ]);

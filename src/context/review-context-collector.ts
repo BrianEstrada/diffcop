@@ -106,12 +106,16 @@ export class ReviewContextCollector {
     ) {
       return { rounds: rounds };
     }
-    const paths = changedFiles.map((file) => {
-      return currentPath(file.path);
-    });
+    // The whole tree's diff, cut down to the reviewed files once git has paired
+    // renames: a pathspec would show a file renamed since then as wholly new.
+    const paths = new Set(
+      changedFiles.map((file) => {
+        return currentPath(file.path);
+      }),
+    );
     return {
       rounds: rounds,
-      delta: parseDelta(since, await repository.diffOfFilesSince(since, paths)),
+      delta: parseDelta(since, await repository.patchSince(since), paths),
     };
   }
 

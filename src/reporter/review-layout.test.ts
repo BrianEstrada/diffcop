@@ -342,7 +342,7 @@ describe("reviewLayout on a re-review", () => {
         settled: [
           {
             finding: nit,
-            reason: "Declined in round 1: the sibling test does the same.",
+            reason: "Declined in round 1: the other handlers do the same.",
           },
         ],
         leftOut: leftOut,
@@ -364,7 +364,7 @@ describe("reviewLayout on a re-review", () => {
     ]);
     expect(settled?.open).toBe(false);
     expect(settled?.body).toContain(
-      "Declined in round 1: the sibling test does the same.",
+      "Declined in round 1: the other handlers do the same.",
     );
   });
 

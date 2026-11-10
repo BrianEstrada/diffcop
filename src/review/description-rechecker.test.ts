@@ -51,7 +51,7 @@ class FakeRepository implements Repository {
     return false;
   }
 
-  async diffOfFilesSince() {
+  async patchSince() {
     return "";
   }
 

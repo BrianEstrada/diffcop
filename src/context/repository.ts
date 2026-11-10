@@ -15,7 +15,7 @@ export interface Repository {
   headSha(): Promise<string>;
   // False too when the commit isn't in the clone.
   isAncestor(sha: string): Promise<boolean>;
-  // `paths`' changes since `ref`, with `a/` and `b/` prefixes and unquoted paths whatever git's config.
-  diffOfFilesSince(ref: string, paths: string[]): Promise<string>;
+  // `diffSince` in one fixed format whatever git's config: `a/` and `b/` prefixes, renames paired.
+  patchSince(ref: string): Promise<string>;
   hashObject(path: string): Promise<string>;
 }

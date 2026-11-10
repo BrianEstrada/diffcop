@@ -57,7 +57,7 @@ class FakeRepository implements Repository {
     return this.#delta !== undefined;
   }
 
-  async diffOfFilesSince() {
+  async patchSince() {
     return this.#delta ?? "";
   }
 

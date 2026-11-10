@@ -226,6 +226,7 @@ const delta = parseDelta(
     "-old",
     "+new",
   ].join("\n"),
+  new Set(["a.ts"]),
 );
 
 function reported(title: string): LedgerEntry {

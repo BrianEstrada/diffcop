@@ -189,19 +189,36 @@ describe("GitRepository", () => {
     expect(await repository.isAncestor("0".repeat(40))).toBe(false);
   });
 
-  test("diffOfFilesSince covers only the given paths, with a/ and b/ prefixes whatever the config", async () => {
-    await git("config", "diff.mnemonicPrefix", "true");
+  test("patchSince uses a/ and b/ prefixes and pairs renames, whatever the config", async () => {
+    const patched = await mkdtemp(join(tmpdir(), "diffcop-patch-"));
+    async function inPatched(...args: string[]) {
+      await $`git -c user.name=test -c user.email=test@example.com -c commit.gpgsign=false ${args}`
+        .cwd(patched)
+        .quiet();
+    }
     try {
-      const repository = new GitRepository(dir);
-      const diff = await repository.diffOfFilesSince(await revParse("main"), [
-        "a.txt",
-      ]);
+      await inPatched("init", "-q", "-b", "main");
+      await Bun.write(join(patched, "old.txt"), "one\ntwo\nthree\n");
+      await Bun.write(join(patched, "a b.txt"), "one\n");
+      await inPatched("add", ".");
+      await inPatched("commit", "-q", "-m", "initial");
+      await inPatched("config", "diff.mnemonicPrefix", "true");
+      await inPatched("config", "diff.renames", "false");
+      await inPatched("mv", "old.txt", "new.txt");
+      await Bun.write(join(patched, "new.txt"), "one\ntwo\nthree\nfour\n");
+      await Bun.write(join(patched, "a b.txt"), "one\ntwo\n");
 
-      expect(diff).toContain("--- a/a.txt\n+++ b/a.txt\n");
-      expect(diff).toContain("+two");
-      expect(diff).not.toContain("b.txt");
+      const diff = await new GitRepository(patched).patchSince("HEAD");
+
+      expect(diff).toContain("rename from old.txt\nrename to new.txt\n");
+      expect(diff).toContain("--- a/old.txt\n+++ b/new.txt\n@@ -1,3 +1,4 @@");
+      // Git ends a path that has a space with a tab.
+      expect(diff).toContain("--- a/a b.txt\t\n+++ b/a b.txt\t\n");
     } finally {
-      await git("config", "--unset", "diff.mnemonicPrefix");
+      await rm(patched, {
+        recursive: true,
+        force: true,
+      });
     }
   });
 });

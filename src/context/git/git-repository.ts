@@ -100,18 +100,17 @@ export class GitRepository implements Repository {
     );
   }
 
-  async diffOfFilesSince(ref: string, paths: string[]) {
+  async patchSince(ref: string) {
     return this.#run(
       "-c",
       "core.quotepath=false",
       "diff",
       "--no-color",
       "--no-ext-diff",
+      "--find-renames",
       "--src-prefix=a/",
       "--dst-prefix=b/",
       ref,
-      "--",
-      ...paths,
     );
   }
 

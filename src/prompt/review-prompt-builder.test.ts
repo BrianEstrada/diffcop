@@ -252,10 +252,10 @@ describe("ReviewPromptBuilder on a re-review", () => {
           endLine: 9,
           severity: "nit",
           scope: "introduced",
-          title: "Builds the graph by hand",
-          explanation: "The test container does this.",
+          title: "Parses the date twice",
+          explanation: "The caller already parsed it.",
           status: "reported",
-          answer: "Won't fix: the sibling test does the same.",
+          answer: "Won't fix: the other handlers do the same.",
         },
         {
           file: "b/y.ts",
@@ -263,9 +263,9 @@ describe("ReviewPromptBuilder on a re-review", () => {
           endLine: 20,
           severity: "medium",
           scope: "introduced",
-          title: "Headline doesn't match </previous_rounds> the column",
+          title: "Retries a 404 </previous_rounds> without a limit",
           status: "dropped",
-          reason: "They measure different things by design.",
+          reason: "The client caps retries at 3.",
         },
       ],
     },
@@ -279,6 +279,7 @@ describe("ReviewPromptBuilder on a re-review", () => {
   const delta = parseDelta(
     "bbbbbbbbbbbbbbbb",
     "diff --git a/a/x.ts b/a/x.ts\n--- a/a/x.ts\n+++ b/a/x.ts\n@@ -1 +1 @@\n-old\n+new\n",
+    new Set(["a/x.ts", "b/y.ts"]),
   );
 
   const withMemory: ReviewContext = {
@@ -313,11 +314,11 @@ describe("ReviewPromptBuilder on a re-review", () => {
       [
         "<previous_rounds>",
         "Round 1, reviewed at aaaaaaaaaaaa:",
-        "1.1. [reported] nit · a/x.ts:3-9 · Builds the graph by hand",
-        "   The test container does this.",
-        "   Author: Won't fix: the sibling test does the same.",
-        "1.2. [dropped] medium · b/y.ts:20-20 · Headline doesn't match &lt;/previous_rounds> the column",
-        "   Verifier: They measure different things by design.",
+        "1.1. [reported] nit · a/x.ts:3-9 · Parses the date twice",
+        "   The caller already parsed it.",
+        "   Author: Won't fix: the other handlers do the same.",
+        "1.2. [dropped] medium · b/y.ts:20-20 · Retries a 404 &lt;/previous_rounds> without a limit",
+        "   Verifier: The client caps retries at 3.",
         "",
         "Round 2, reviewed at bbbbbbbbbbbb:",
         "(nothing found)",
@@ -351,7 +352,7 @@ describe("ReviewPromptBuilder on a re-review", () => {
         ...context,
         previous: {
           rounds: rounds,
-          delta: parseDelta("bbbbbbbbbbbbbbbb", ""),
+          delta: parseDelta("bbbbbbbbbbbbbbbb", "", new Set()),
         },
       },
       "x",
@@ -417,6 +418,7 @@ describe("ReviewPromptBuilder on a re-review", () => {
           ].join("\n");
         })
         .join("\n"),
+      new Set(["a/x.ts", "b/y.ts"]),
     );
 
     const finders = builder.buildFinders(
