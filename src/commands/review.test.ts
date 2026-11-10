@@ -34,6 +34,57 @@ describe("review", () => {
     );
   });
 
+  test.each(["0", "5", "2.5", "many"])(
+    "rejects --maxChunks %p before starting the review",
+    async (value) => {
+      const proc = Bun.spawn(
+        [
+          "bun",
+          "src/cli.ts",
+          "review",
+          "x",
+          "--maxChunks",
+          value,
+          "--cwd",
+          "/nonexistent",
+        ],
+        {
+          env: { PATH: process.env.PATH },
+          stderr: "pipe",
+          stdout: "pipe",
+        },
+      );
+      expect(await proc.exited).not.toBe(0);
+      expect(await new Response(proc.stderr).text()).toContain(
+        `--maxChunks must be an integer from 1 to 4, not "${value}".`,
+      );
+    },
+  );
+
+  test("accepts --maxChunks 4", async () => {
+    const proc = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "review",
+        "x",
+        "--maxChunks",
+        "4",
+        "--cwd",
+        "/nonexistent",
+      ],
+      {
+        env: { PATH: process.env.PATH },
+        stderr: "pipe",
+        stdout: "pipe",
+      },
+    );
+    expect(await proc.exited).not.toBe(0);
+    expect(await new Response(proc.stderr).text()).toContain(
+      "Not a git repository: /nonexistent",
+    );
+  });
+
   test("leaves --maxTurns unset by default", async () => {
     const proc = Bun.spawn(
       ["bun", "src/cli.ts", "review", "x", "--cwd", "/nonexistent"],

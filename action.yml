@@ -27,9 +27,9 @@ inputs:
     required: false
     default: high
   max-chunks:
-    description: Most chunks of about 400 changed lines to split a diff into, each reviewed twice. Past this many, chunks grow.
+    description: Split a diff into up to this many chunks of about 400 changed lines, each reviewed twice. 1 to 4; 1 reviews it in one pass.
     required: false
-    default: "6"
+    default: "1"
   debug:
     description: Also log the reviewer's tool calls and thinking time.
     required: false

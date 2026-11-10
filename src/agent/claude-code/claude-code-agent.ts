@@ -1,7 +1,5 @@
 import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
-import { resolveSandboxHomeDir, writeSkills } from "@ai-sdk/harness/utils";
-import type { Experimental_SandboxSession } from "@ai-sdk/provider-utils";
 import { tool } from "ai";
 import type { ModelMessage } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
@@ -14,6 +12,7 @@ import type {
   RunStats,
 } from "@/agent/reviewer-agent";
 import { sumStats } from "@/agent/reviewer-agent";
+import { FirstAlone } from "@/util/first-alone";
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
@@ -134,40 +133,31 @@ export const SUBMIT_REMINDER = `You ended without calling ${SUBMIT_TOOL}. Call i
 
 export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   readonly #options: ClaudeCodeReviewerAgentOptions;
-  #skillsManifest = Promise.resolve(false);
+  // On a fresh machine each session installs the harness's bridge in
+  // ~/.ai-sdk-harness and writes ~/.claude/skills' manifest, and neither is safe
+  // in parallel. Both are done once a run has a chunk back from Claude Code.
+  readonly #setup = new FirstAlone();
 
   constructor(options: ClaudeCodeReviewerAgentOptions = {}) {
     this.#options = options;
   }
 
-  // Each turn, the harness rewrites ~/.claude/skills' manifest through one fixed
-  // temp file until it's current, so parallel sessions on a fresh machine race.
-  // Runs queue here until one has written it; a failed write fails only its run.
-  async #writeSkillsManifest(sandbox: Experimental_SandboxSession) {
-    const attempt = this.#skillsManifest.then(async (written) => {
-      if (!written) {
-        await writeSkills({
-          sandbox: sandbox,
-          homePath: await resolveSandboxHomeDir({ sandbox: sandbox }),
-          skillsDir: ".claude/skills",
-          skills: [],
-        });
-      }
-      return true;
-    });
-    this.#skillsManifest = attempt.catch(() => {
-      return false;
-    });
-    await attempt;
+  async run<T>(run: AgentRun<T>): Promise<AgentResult<T>> {
+    const setUp = await this.#setup.enter();
+    try {
+      run.abortSignal?.throwIfAborted();
+      return await this.#run(run, () => {
+        setUp(true);
+      });
+    } finally {
+      setUp(false);
+    }
   }
 
-  async run<T>({
-    cwd,
-    prompt,
-    output,
-    reporter,
-    abortSignal,
-  }: AgentRun<T>): Promise<AgentResult<T>> {
+  async #run<T>(
+    { cwd, prompt, output, reporter, abortSignal }: AgentRun<T>,
+    onChunk: () => void,
+  ): Promise<AgentResult<T>> {
     const startedAt = performance.now();
     const port = leaseLocalPort();
     let submitted: { answer: T } | undefined;
@@ -211,6 +201,7 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     }).createSession();
     const session = await agent.createSession({
       sandboxSession: sandboxSession,
+      abortSignal: abortSignal,
     });
 
     let toolCalls = 0;
@@ -263,6 +254,10 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
           case "error":
             throw part.error;
         }
+        // The harness sends `start` itself, before its setup has run.
+        if (part.type !== "start") {
+          onChunk();
+        }
       }
       const usage = await result.usage;
       // A turn paused for an approval sends no cost; counting it as unknown
@@ -295,7 +290,6 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     }
 
     try {
-      await this.#writeSkillsManifest(sandboxSession);
       const turns = await deniedUntilDone(prompt.content);
       if (submitted === undefined) {
         turns.push(...(await deniedUntilDone([SUBMIT_REMINDER])));

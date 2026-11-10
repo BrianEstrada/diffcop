@@ -31,10 +31,10 @@ interface Asks {
 let turns: (Answer | Asks | undefined)[] = [];
 let sent: unknown[] = [];
 let instructions: string[] = [];
-// "manifest" for each skills manifest write and "turn" for each turn, in order.
+// "session", "turn" and "chunk" (a turn's first part after `start`) as each happens.
 let order: string[] = [];
-// How many of the next skills manifest writes fail.
-let manifestFailures = 0;
+// How many of the next sessions fail to start.
+let sessionFailures = 0;
 
 // Bun swaps the binding the agent module already imported.
 await mock.module("@ai-sdk/harness/agent", () => {
@@ -48,6 +48,12 @@ await mock.module("@ai-sdk/harness/agent", () => {
       }
 
       async createSession() {
+        order.push("session");
+        await Bun.sleep(1);
+        if (sessionFailures > 0) {
+          sessionFailures--;
+          throw new Error("pnpm install failed");
+        }
         return { destroy: async () => {} };
       }
 
@@ -68,6 +74,9 @@ await mock.module("@ai-sdk/harness/agent", () => {
           });
           return {
             stream: (async function* () {
+              yield { type: "start" };
+              await Bun.sleep(1);
+              order.push("chunk");
               yield* parts;
             })(),
             usage: Promise.resolve({
@@ -91,6 +100,9 @@ await mock.module("@ai-sdk/harness/agent", () => {
         });
         return {
           stream: (async function* () {
+            yield { type: "start" };
+            await Bun.sleep(1);
+            order.push("chunk");
             yield* parts;
           })(),
           usage: Promise.resolve({
@@ -100,22 +112,6 @@ await mock.module("@ai-sdk/harness/agent", () => {
           }),
         };
       }
-    },
-  };
-});
-
-await mock.module("@ai-sdk/harness/utils", () => {
-  return {
-    resolveSandboxHomeDir: async () => {
-      return "/home/reviewer";
-    },
-    writeSkills: async () => {
-      await Bun.sleep(1);
-      if (manifestFailures > 0) {
-        manifestFailures--;
-        throw new Error("mv failed");
-      }
-      order.push("manifest");
     },
   };
 });
@@ -201,7 +197,7 @@ describe("ClaudeCodeReviewerAgent", () => {
     sent = [];
     instructions = [];
     order = [];
-    manifestFailures = 0;
+    sessionFailures = 0;
   });
 
   test("returns what the reviewer submits", async () => {
@@ -265,16 +261,22 @@ describe("ClaudeCodeReviewerAgent", () => {
     expect(result.stats.costUsd).toBe(0.1);
   });
 
-  test("writes the skills manifest once, before any parallel session's turn", async () => {
+  test("starts one session alone until its first chunk, then the rest at once", async () => {
     turns = [{ ok: true }, { ok: true }, { ok: true }];
     const agent = new ClaudeCodeReviewerAgent();
     await Promise.all([review(agent), review(agent), review(agent)]);
-    expect(order).toEqual(["manifest", "turn", "turn", "turn"]);
+    expect(order.slice(0, 5)).toEqual([
+      "session",
+      "turn",
+      "chunk",
+      "session",
+      "session",
+    ]);
   });
 
-  test("fails only one run when a manifest write fails, and the next run writes it", async () => {
+  test("fails only one run when a session fails to start, and the next goes alone", async () => {
     turns = [{ ok: true }, { ok: true }];
-    manifestFailures = 1;
+    sessionFailures = 1;
     const agent = new ClaudeCodeReviewerAgent();
     const settled = await Promise.allSettled([
       review(agent),
@@ -286,7 +288,32 @@ describe("ClaudeCodeReviewerAgent", () => {
         return status;
       }),
     ).toEqual(["rejected", "fulfilled", "fulfilled"]);
-    expect(order).toEqual(["manifest", "turn", "turn"]);
+    expect(order.slice(0, 5)).toEqual([
+      "session",
+      "session",
+      "turn",
+      "chunk",
+      "session",
+    ]);
+  });
+
+  test("starts no session for a run that's already cancelled", async () => {
+    const abort = new AbortController();
+    abort.abort();
+    expect(
+      new ClaudeCodeReviewerAgent().run({
+        cwd: "/repo",
+        prompt: {
+          instructions: "Find bugs.",
+          content: ["x"],
+        },
+        output: z.object({ ok: z.boolean() }),
+        reporter: silent,
+        abortSignal: abort.signal,
+      }),
+    ).rejects.toThrow();
+    await Bun.sleep(2);
+    expect(order).toEqual([]);
   });
 
   test("fails when the reviewer keeps asking after every denial", async () => {
