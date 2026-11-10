@@ -358,7 +358,7 @@ describe("ReviewPromptBuilder on a re-review", () => {
       "x",
     ).content;
 
-    expect(block).toContain("(nothing changed in these files)");
+    expect(block).toContain("(no changes in these files)");
   });
 
   test("keeps the newest rounds when they don't all fit", () => {

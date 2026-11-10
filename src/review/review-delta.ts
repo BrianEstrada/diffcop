@@ -19,8 +19,6 @@ export interface ReviewDelta {
 
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)/;
 
-const NEW_SIDE = "+++ ";
-
 const NAMED_ESCAPES: Record<string, string> = {
   a: "\u0007",
   b: "\b",
@@ -32,8 +30,11 @@ const NAMED_ESCAPES: Record<string, string> = {
 };
 
 // Git C-quotes a path that has a quote, a backslash or a control character.
-function unquote(quoted: string) {
-  return quoted.slice(1, -1).replace(/\\([0-7]{3}|.)/g, (_, escape: string) => {
+function unquote(path: string) {
+  if (!path.startsWith('"')) {
+    return path;
+  }
+  return path.slice(1, -1).replace(/\\([0-7]{3}|.)/g, (_, escape: string) => {
     if (escape.length === 3) {
       return String.fromCharCode(Number.parseInt(escape, 8));
     }
@@ -41,39 +42,36 @@ function unquote(quoted: string) {
   });
 }
 
-// Undefined for a deleted file (`/dev/null`), and for a binary file or a pure rename, which have no header.
-function newPath(header: string[]) {
+// The path on the header line that starts with `start`, without `prefix`.
+// Undefined without such a line, and for `/dev/null`, which has no prefix.
+function headerPath(header: string[], start: string, prefix = "") {
   const line = header.find((text) => {
-    return text.startsWith(NEW_SIDE);
+    return text.startsWith(start);
   });
   if (line === undefined) {
     return undefined;
   }
   // Git ends a path that has a space with a tab.
-  const raw = line.slice(NEW_SIDE.length).replace(/\t$/, "");
-  const path = raw.startsWith('"') ? unquote(raw) : raw;
-  return path.startsWith("b/") ? path.slice("b/".length) : undefined;
+  const path = unquote(line.slice(start.length).replace(/\t$/, ""));
+  return path.startsWith(prefix) ? path.slice(prefix.length) : undefined;
 }
 
-function parseSection(section: string): [string, DeltaFile] | undefined {
-  const lines = section.split("\n");
-  const firstHunk = lines.findIndex((text) => {
-    return HUNK.test(text);
-  });
-  if (firstHunk === -1) {
-    return undefined;
-  }
-  const path = newPath(lines.slice(0, firstHunk));
-  if (path === undefined) {
-    return undefined;
-  }
+interface Section {
+  // The file's current path, or its last one if it was deleted.
+  path: string;
+  text: string;
+  // Absent when no line of the current file changed: a deletion or a rename alone.
+  file?: DeltaFile;
+}
+
+function touchedLines(hunks: string[]): DeltaFile {
   const file: DeltaFile = {
     touched: new Set(),
     additions: 0,
     deletions: 0,
   };
   let line = 0;
-  for (const text of lines.slice(firstHunk)) {
+  for (const text of hunks) {
     const start = text.match(HUNK)?.[1];
     if (start !== undefined) {
       line = Number(start);
@@ -90,7 +88,32 @@ function parseSection(section: string): [string, DeltaFile] | undefined {
       line++;
     }
   }
-  return [path, file];
+  return file;
+}
+
+// Undefined for a section that names no path this way: a binary file or a mode change.
+function parseSection(text: string): Section | undefined {
+  const lines = text.split("\n");
+  const firstHunk = lines.findIndex((line) => {
+    return HUNK.test(line);
+  });
+  const header = firstHunk === -1 ? lines : lines.slice(0, firstHunk);
+  const current = headerPath(header, "+++ ", "b/");
+  const path =
+    current ??
+    headerPath(header, "--- ", "a/") ??
+    headerPath(header, "rename to ");
+  if (path === undefined) {
+    return undefined;
+  }
+  const section: Section = {
+    path: path,
+    text: text.replace(/\n?$/, "\n"),
+  };
+  if (current !== undefined && firstHunk !== -1) {
+    section.file = touchedLines(lines.slice(firstHunk));
+  }
+  return section;
 }
 
 // `diff` is `Repository.patchSince`'s; only the sections of `paths`, the reviewed files, are kept.
@@ -99,17 +122,12 @@ export function parseDelta(
   diff: string,
   paths: ReadonlySet<string>,
 ): ReviewDelta {
-  const sections = diff.split(/^(?=diff --git )/m).flatMap((section) => {
-    const parsed = parseSection(section);
-    if (!parsed || !paths.has(parsed[0])) {
+  const sections = diff.split(/^(?=diff --git )/m).flatMap((text) => {
+    const section = parseSection(text);
+    if (!section || !paths.has(section.path)) {
       return [];
     }
-    return [
-      {
-        text: section.replace(/\n?$/, "\n"),
-        parsed: parsed,
-      },
-    ];
+    return [section];
   });
   return {
     since: since,
@@ -119,8 +137,8 @@ export function parseDelta(
       })
       .join(""),
     files: new Map(
-      sections.map(({ parsed }) => {
-        return parsed;
+      sections.flatMap(({ path, file }) => {
+        return file ? [[path, file] as const] : [];
       }),
     ),
   };

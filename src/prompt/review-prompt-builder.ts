@@ -499,7 +499,7 @@ export class ReviewPromptBuilder {
       sections.unshift(
         section(
           "changes_since_last_review",
-          this.#formatDiff(delta.diff) || "(nothing changed in these files)",
+          this.#formatDiff(delta.diff) || "(no changes in these files)",
         ),
       );
     }

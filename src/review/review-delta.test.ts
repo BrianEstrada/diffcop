@@ -81,6 +81,13 @@ describe("parseDelta", () => {
     expect(delta.diff).toEndWith("-ten\n");
   });
 
+  test("keeps a reviewed file's deletion or rename in the diff, though no line of it is touched", () => {
+    expect(delta.diff).toContain("+++ /dev/null\n@@ -1 +0,0 @@\n-only line\n");
+    expect(delta.diff).toContain("rename to src/renamed.ts\n");
+    expect(delta.files.has("src/deleted.ts")).toBe(false);
+    expect(delta.files.has("src/renamed.ts")).toBe(false);
+  });
+
   test("lists added lines, and the line after a removed one, by new-side number", () => {
     const file = delta.files.get("src/a.ts");
 
@@ -105,7 +112,7 @@ describe("parseDelta", () => {
     ]);
   });
 
-  test("leaves out deleted and binary files, pure renames and files that aren't under review", () => {
+  test("lists no lines for deleted and binary files, pure renames and files that aren't under review", () => {
     expect([...delta.files.keys()]).toEqual([
       "src/a.ts",
       "src/new file.ts",
