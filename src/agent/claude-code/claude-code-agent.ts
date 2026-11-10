@@ -1,5 +1,7 @@
 import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
+import { resolveSandboxHomeDir, writeSkills } from "@ai-sdk/harness/utils";
+import type { Experimental_SandboxSession } from "@ai-sdk/provider-utils";
 import { tool } from "ai";
 import type { ModelMessage } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
@@ -132,9 +134,27 @@ export const SUBMIT_REMINDER = `You ended without calling ${SUBMIT_TOOL}. Call i
 
 export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   readonly #options: ClaudeCodeReviewerAgentOptions;
+  #skillsManifest: Promise<unknown> | undefined;
 
   constructor(options: ClaudeCodeReviewerAgentOptions = {}) {
     this.#options = options;
+  }
+
+  // Each turn, the harness rewrites ~/.claude/skills' manifest through one fixed
+  // temp file until it's there and current, so parallel sessions on a fresh
+  // machine race on it. Written once up front, the harness has nothing to write.
+  async #writeSkillsManifest(sandbox: Experimental_SandboxSession) {
+    this.#skillsManifest ??= resolveSandboxHomeDir({ sandbox: sandbox }).then(
+      (homePath) => {
+        return writeSkills({
+          sandbox: sandbox,
+          homePath: homePath,
+          skillsDir: ".claude/skills",
+          skills: [],
+        });
+      },
+    );
+    await this.#skillsManifest;
   }
 
   async run<T>({
@@ -271,6 +291,7 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     }
 
     try {
+      await this.#writeSkillsManifest(sandboxSession);
       const turns = await deniedUntilDone(prompt.content);
       if (submitted === undefined) {
         turns.push(...(await deniedUntilDone([SUBMIT_REMINDER])));

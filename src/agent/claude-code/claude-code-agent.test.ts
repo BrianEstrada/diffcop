@@ -31,6 +31,8 @@ interface Asks {
 let turns: (Answer | Asks | undefined)[] = [];
 let sent: unknown[] = [];
 let instructions: string[] = [];
+// "manifest" for each skills manifest write and "turn" for each turn, in order.
+let order: string[] = [];
 
 // Bun swaps the binding the agent module already imported.
 await mock.module("@ai-sdk/harness/agent", () => {
@@ -49,6 +51,7 @@ await mock.module("@ai-sdk/harness/agent", () => {
 
       async stream({ messages }: { messages: unknown[] }) {
         sent.push(messages);
+        order.push("turn");
         const answer = turns.shift();
         const parts: unknown[] = [];
         if (answer !== undefined && "asks" in answer) {
@@ -95,6 +98,18 @@ await mock.module("@ai-sdk/harness/agent", () => {
           }),
         };
       }
+    },
+  };
+});
+
+await mock.module("@ai-sdk/harness/utils", () => {
+  return {
+    resolveSandboxHomeDir: async () => {
+      return "/home/reviewer";
+    },
+    writeSkills: async () => {
+      await Bun.sleep(1);
+      order.push("manifest");
     },
   };
 });
@@ -162,8 +177,8 @@ const silent: ReviewReporter = {
   failed: async () => {},
 };
 
-function review() {
-  return new ClaudeCodeReviewerAgent().run({
+function review(agent = new ClaudeCodeReviewerAgent()) {
+  return agent.run({
     cwd: "/repo",
     prompt: {
       instructions: "Find bugs.",
@@ -179,6 +194,7 @@ describe("ClaudeCodeReviewerAgent", () => {
     turns = [];
     sent = [];
     instructions = [];
+    order = [];
   });
 
   test("returns what the reviewer submits", async () => {
@@ -240,6 +256,13 @@ describe("ClaudeCodeReviewerAgent", () => {
     ]);
     // The paused turn sends no cost, so only the finished one counts.
     expect(result.stats.costUsd).toBe(0.1);
+  });
+
+  test("writes the skills manifest once, before any parallel session's turn", async () => {
+    turns = [{ ok: true }, { ok: true }, { ok: true }];
+    const agent = new ClaudeCodeReviewerAgent();
+    await Promise.all([review(agent), review(agent), review(agent)]);
+    expect(order).toEqual(["manifest", "turn", "turn", "turn"]);
   });
 
   test("fails when the reviewer keeps asking after every denial", async () => {
