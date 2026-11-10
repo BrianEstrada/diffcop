@@ -470,7 +470,10 @@ describe("CodeReviewer", () => {
       agent,
       new RecordingReporter(),
       chunkSized("a/x.ts", "b/y.ts"),
-    ).review({ request: "x" });
+    ).review({
+      request: "x",
+      maxChunks: 4,
+    });
 
     expect(
       agent.runs.slice(0, 5).map((run) => {
@@ -533,7 +536,10 @@ describe("CodeReviewer", () => {
       agent,
       new RecordingReporter(),
       chunkSized("a/x.ts", "b/y.ts"),
-    ).review({ request: "x" });
+    ).review({
+      request: "x",
+      maxChunks: 4,
+    });
 
     const [merger, verifier] = agent.runs.slice(5);
     expect(merger?.prompt.instructions).toContain("without using tools");
@@ -546,6 +552,24 @@ describe("CodeReviewer", () => {
         into: finding("A"),
       },
     ]);
+  });
+
+  test("runs a single finder over a diff of several chunks unless maxChunks asks for more", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [],
+      },
+    ]);
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      chunkSized("a/x.ts", "b/y.ts"),
+    ).review({ request: "x" });
+
+    expect(agent.runs).toHaveLength(1);
+    expect(reviewed.finders).toBeUndefined();
   });
 
   test("runs a single finder over the whole diff when the change fits one chunk", async () => {
@@ -581,7 +605,10 @@ describe("CodeReviewer", () => {
       new RecordingReporter(),
       chunkSized("a/x.ts", "b/y.ts"),
       1_500,
-    ).review({ request: "x" });
+    ).review({
+      request: "x",
+      maxChunks: 4,
+    });
 
     expect(reviewed.stats.durationMs).toBe(1_500);
     expect(reviewed.stats.costUsd).toBe(1.25);

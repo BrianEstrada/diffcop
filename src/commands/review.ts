@@ -18,7 +18,11 @@ import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatt
 import { StickyComment } from "@/reporter/github/sticky-comment";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
-import { CodeReviewer, DEFAULT_MAX_CHUNKS } from "@/review/code-reviewer";
+import {
+  CodeReviewer,
+  DEFAULT_MAX_CHUNKS,
+  MAX_CHUNKS_LIMIT,
+} from "@/review/code-reviewer";
 import { DescriptionRechecker } from "@/review/description-rechecker";
 import type { RecheckOutcome } from "@/review/description-rechecker";
 import { FindAndVerify } from "@/review/find-and-verify";
@@ -33,6 +37,21 @@ function parsePositiveInt(flag: string, value: string) {
   const result = z.coerce.number().int().positive().safeParse(value);
   if (!result.success) {
     throw new Error(`--${flag} must be a positive integer, not "${value}".`);
+  }
+  return result.data;
+}
+
+function parseMaxChunks(value: string) {
+  const result = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_CHUNKS_LIMIT)
+    .safeParse(value);
+  if (!result.success) {
+    throw new Error(
+      `--maxChunks must be an integer from 1 to ${MAX_CHUNKS_LIMIT}, not "${value}".`,
+    );
   }
   return result.data;
 }
@@ -180,8 +199,7 @@ export default defineCommand({
     },
     maxChunks: {
       type: "string",
-      description:
-        "Most chunks of about 400 changed lines to split a diff into, each reviewed twice; past this many, chunks grow",
+      description: `Split a diff into up to this many chunks of about 400 changed lines, each reviewed twice (1 to ${MAX_CHUNKS_LIMIT}); 1 reviews it in one pass`,
       default: String(DEFAULT_MAX_CHUNKS),
     },
     reporter: {
@@ -203,7 +221,7 @@ export default defineCommand({
     if (args.maxTurns !== undefined) {
       maxTurns = parsePositiveInt("maxTurns", args.maxTurns);
     }
-    const maxChunks = parsePositiveInt("maxChunks", args.maxChunks);
+    const maxChunks = parseMaxChunks(args.maxChunks);
     const sizeLimit = new ChangeSizeLimit({
       maxLines: parsePositiveInt("maxLines", args.maxLines),
       maxFiles: parsePositiveInt("maxFiles", args.maxFiles),

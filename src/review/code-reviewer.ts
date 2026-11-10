@@ -12,11 +12,16 @@ export interface ReviewRequest {
   request: string;
   base?: string;
   // Chunks of the diff, each with finders of its own; past this many, chunks grow.
+  // 1 keeps one finder over the whole diff.
   maxChunks?: number;
   abortSignal?: AbortSignal;
 }
 
-export const DEFAULT_MAX_CHUNKS = 6;
+// Chunked review is opt-in: it multiplies a review's sessions and cost.
+export const DEFAULT_MAX_CHUNKS = 1;
+
+// Each chunk adds two parallel finder sessions.
+export const MAX_CHUNKS_LIMIT = 4;
 
 // Modeled on claude-code-action's context → prompt → agent pipeline.
 export class CodeReviewer {
