@@ -134,27 +134,31 @@ export const SUBMIT_REMINDER = `You ended without calling ${SUBMIT_TOOL}. Call i
 
 export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   readonly #options: ClaudeCodeReviewerAgentOptions;
-  #skillsManifest: Promise<unknown> | undefined;
+  #skillsManifest = Promise.resolve(false);
 
   constructor(options: ClaudeCodeReviewerAgentOptions = {}) {
     this.#options = options;
   }
 
   // Each turn, the harness rewrites ~/.claude/skills' manifest through one fixed
-  // temp file until it's there and current, so parallel sessions on a fresh
-  // machine race on it. Written once up front, the harness has nothing to write.
+  // temp file until it's current, so parallel sessions on a fresh machine race.
+  // Runs queue here until one has written it; a failed write fails only its run.
   async #writeSkillsManifest(sandbox: Experimental_SandboxSession) {
-    this.#skillsManifest ??= resolveSandboxHomeDir({ sandbox: sandbox }).then(
-      (homePath) => {
-        return writeSkills({
+    const attempt = this.#skillsManifest.then(async (written) => {
+      if (!written) {
+        await writeSkills({
           sandbox: sandbox,
-          homePath: homePath,
+          homePath: await resolveSandboxHomeDir({ sandbox: sandbox }),
           skillsDir: ".claude/skills",
           skills: [],
         });
-      },
-    );
-    await this.#skillsManifest;
+      }
+      return true;
+    });
+    this.#skillsManifest = attempt.catch(() => {
+      return false;
+    });
+    await attempt;
   }
 
   async run<T>({

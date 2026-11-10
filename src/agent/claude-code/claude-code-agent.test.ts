@@ -33,6 +33,8 @@ let sent: unknown[] = [];
 let instructions: string[] = [];
 // "manifest" for each skills manifest write and "turn" for each turn, in order.
 let order: string[] = [];
+// How many of the next skills manifest writes fail.
+let manifestFailures = 0;
 
 // Bun swaps the binding the agent module already imported.
 await mock.module("@ai-sdk/harness/agent", () => {
@@ -109,6 +111,10 @@ await mock.module("@ai-sdk/harness/utils", () => {
     },
     writeSkills: async () => {
       await Bun.sleep(1);
+      if (manifestFailures > 0) {
+        manifestFailures--;
+        throw new Error("mv failed");
+      }
       order.push("manifest");
     },
   };
@@ -195,6 +201,7 @@ describe("ClaudeCodeReviewerAgent", () => {
     sent = [];
     instructions = [];
     order = [];
+    manifestFailures = 0;
   });
 
   test("returns what the reviewer submits", async () => {
@@ -263,6 +270,23 @@ describe("ClaudeCodeReviewerAgent", () => {
     const agent = new ClaudeCodeReviewerAgent();
     await Promise.all([review(agent), review(agent), review(agent)]);
     expect(order).toEqual(["manifest", "turn", "turn", "turn"]);
+  });
+
+  test("fails only one run when a manifest write fails, and the next run writes it", async () => {
+    turns = [{ ok: true }, { ok: true }];
+    manifestFailures = 1;
+    const agent = new ClaudeCodeReviewerAgent();
+    const settled = await Promise.allSettled([
+      review(agent),
+      review(agent),
+      review(agent),
+    ]);
+    expect(
+      settled.map(({ status }) => {
+        return status;
+      }),
+    ).toEqual(["rejected", "fulfilled", "fulfilled"]);
+    expect(order).toEqual(["manifest", "turn", "turn"]);
   });
 
   test("fails when the reviewer keeps asking after every denial", async () => {
