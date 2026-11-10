@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   findingsSchema,
   numberFindings,
+  preferFresh,
   removeDuplicates,
   splitByVerdict,
   verdictsSchema,
@@ -163,6 +164,7 @@ describe("splitByVerdict", () => {
           reason: "No verdict returned",
         },
       ],
+      settled: [],
     });
   });
 
@@ -192,6 +194,7 @@ describe("splitByVerdict", () => {
             "Contradictory verdicts: Fails on []. / Guarded by the caller.",
         },
       ],
+      settled: [],
     });
   });
 
@@ -240,6 +243,7 @@ describe("splitByVerdict", () => {
           reason: "No verdict returned",
         },
       ],
+      settled: [],
     });
   });
 
@@ -264,6 +268,7 @@ describe("splitByVerdict", () => {
     ).toEqual({
       confirmed: [finding("A")],
       dropped: [],
+      settled: [],
     });
   });
 
@@ -328,6 +333,7 @@ describe("splitByVerdict", () => {
           reason: "Same.",
         },
       ],
+      settled: [],
     });
   });
 });
@@ -412,5 +418,208 @@ describe("removeDuplicates", () => {
       kept: findings,
       merged: [],
     });
+  });
+});
+
+describe("splitByVerdict on a re-review", () => {
+  test("sets a settled finding apart from the confirmed and the dropped", () => {
+    expect(
+      splitByVerdict(
+        [finding("A"), finding("B")],
+        [
+          {
+            id: 1,
+            verdict: "settled",
+            reason: "Declined in round 2.",
+          },
+          {
+            id: 2,
+            verdict: "confirmed",
+            reason: "Fails on [].",
+          },
+        ],
+      ),
+    ).toEqual({
+      confirmed: [finding("B")],
+      dropped: [],
+      settled: [
+        {
+          finding: finding("A"),
+          reason: "Declined in round 2.",
+        },
+      ],
+    });
+  });
+
+  test("gives a settled finding without a reason a default one", () => {
+    expect(
+      splitByVerdict(
+        [finding("A")],
+        [
+          {
+            id: 1,
+            verdict: "settled",
+            reason: " ",
+          },
+        ],
+      ).settled,
+    ).toEqual([
+      {
+        finding: finding("A"),
+        reason: "Settled in an earlier round",
+      },
+    ]);
+  });
+
+  test("moves a confirmed finding to the lines the verifier gives", () => {
+    expect(
+      splitByVerdict(
+        [finding("A"), finding("B")],
+        [
+          {
+            id: 1,
+            verdict: "confirmed",
+            startLine: 40,
+            endLine: 44,
+            reason: "Still there, further down.",
+          },
+          {
+            id: 2,
+            verdict: "confirmed",
+            startLine: 7,
+            reason: "Still there.",
+          },
+        ],
+      ).confirmed,
+    ).toEqual([
+      {
+        ...finding("A"),
+        startLine: 40,
+        endLine: 44,
+      },
+      {
+        ...finding("B"),
+        startLine: 7,
+        endLine: 7,
+      },
+    ]);
+  });
+
+  test("keeps a finding's lines when the verifier's range ends before it starts", () => {
+    expect(
+      splitByVerdict(
+        [finding("A")],
+        [
+          {
+            id: 1,
+            verdict: "confirmed",
+            startLine: 40,
+            endLine: 4,
+            reason: "Still there.",
+          },
+        ],
+      ).confirmed,
+    ).toEqual([finding("A")]);
+  });
+});
+
+describe("numberFindings on a re-review", () => {
+  test("marks only the findings carried from an earlier round", () => {
+    const carried = finding("A");
+    const fresh = finding("B");
+
+    expect(numberFindings([carried, fresh], new Set([carried]))).toEqual([
+      {
+        id: 1,
+        ...carried,
+        earlierRound: true,
+      },
+      {
+        id: 2,
+        ...fresh,
+      },
+    ]);
+  });
+});
+
+describe("preferFresh", () => {
+  const carried = finding("Carried");
+  const fresh = finding("Fresh");
+  const other = finding("Other");
+
+  test("keeps the fresh finding when it was merged into a carried one", () => {
+    expect(
+      preferFresh(
+        {
+          kept: [carried, other],
+          merged: [
+            {
+              finding: fresh,
+              into: carried,
+            },
+          ],
+        },
+        new Set([carried]),
+      ),
+    ).toEqual({
+      kept: [fresh, other],
+      merged: [
+        {
+          finding: carried,
+          into: fresh,
+        },
+      ],
+    });
+  });
+
+  test("points every other duplicate of the carried finding at the fresh one", () => {
+    expect(
+      preferFresh(
+        {
+          kept: [carried],
+          merged: [
+            {
+              finding: fresh,
+              into: carried,
+            },
+            {
+              finding: other,
+              into: carried,
+            },
+          ],
+        },
+        new Set([carried]),
+      ),
+    ).toEqual({
+      kept: [fresh],
+      merged: [
+        {
+          finding: carried,
+          into: fresh,
+        },
+        {
+          finding: other,
+          into: fresh,
+        },
+      ],
+    });
+  });
+
+  test("leaves merges between fresh findings, or into a fresh one, as they are", () => {
+    const deduped = {
+      kept: [fresh],
+      merged: [
+        {
+          finding: other,
+          into: fresh,
+        },
+        {
+          finding: carried,
+          into: fresh,
+        },
+      ],
+    };
+
+    expect(preferFresh(deduped, new Set([carried]))).toEqual(deduped);
   });
 });

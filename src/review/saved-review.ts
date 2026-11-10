@@ -23,17 +23,24 @@ const runStatsSchema = z.object({
   costUsd: z.number().optional(),
 }) satisfies z.ZodType<RunStats>;
 
+const judgedFindingSchema = z.object({
+  finding: findingSchema,
+  reason: z.string(),
+});
+
 const reviewResultSchema = z.object({
   summary: z.string(),
   findings: z.array(findingSchema),
-  dropped: z.array(
-    z.object({
-      finding: findingSchema,
-      reason: z.string(),
-    }),
-  ),
+  dropped: z.array(judgedFindingSchema),
   explored: exploredSchema,
   stats: runStatsSchema,
+  rereview: z
+    .object({
+      since: z.string().optional(),
+      settled: z.array(judgedFindingSchema),
+      leftOut: z.number(),
+    })
+    .optional(),
 }) satisfies z.ZodType<ReviewResult>;
 
 // What a later run needs to re-check the description without reviewing the code again.

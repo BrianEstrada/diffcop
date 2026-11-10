@@ -8,8 +8,10 @@ import type {
   Scope,
   Severity,
 } from "@/review/findings";
+import { readLedger } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
+import type { ReviewLedger } from "@/review/review-ledger";
 import type { SavedReview } from "@/review/saved-review";
 
 const pr: PullRequestContext = {
@@ -46,6 +48,11 @@ function finding(
     title: `A ${severity} bug`,
     explanation: explanation,
   };
+}
+
+// The visible comment: what's left without the ledger it ends with.
+function withoutLedger(body: string) {
+  return body.replace(/\n<!-- diffcop:ledger=[^>]* -->$/, "");
 }
 
 function review(
@@ -240,7 +247,7 @@ describe("ReviewCommentFormatter.review", () => {
     );
     expect(body.match(/<details/g)).toHaveLength(1);
     expect(body.match(/<\/details>/g)).toHaveLength(1);
-    expect(body).toEndWith("</sub>");
+    expect(withoutLedger(body)).toEndWith("</sub>");
     expect(readSavedReview(body)).toBeUndefined();
   });
 });
@@ -314,9 +321,10 @@ describe("ReviewCommentFormatter saved review", () => {
     const body = new ReviewCommentFormatter(triggered).review(
       review([finding("high", "x".repeat(40_000))]),
     );
-    expect(body).toEndWith("</sub>");
+    expect(withoutLedger(body)).toEndWith("</sub>");
     expect(body.length).toBeLessThan(65_000);
     expect(readSavedReview(body)).toBeUndefined();
+    expect(readLedger(body)?.rounds).toHaveLength(1);
   });
 });
 
@@ -395,5 +403,231 @@ describe("ReviewCommentFormatter warnings", () => {
     expect(formatter.running()).toContain(
       `${alert}> [!WARNING]\n> Another one.\n\n⏳`,
     );
+  });
+});
+
+describe("ReviewCommentFormatter ledger", () => {
+  const earlier: ReviewLedger = {
+    version: 1,
+    rounds: [
+      {
+        headSha: "1111111",
+        entries: [
+          {
+            ...finding("nit", "Rename it."),
+            status: "dropped",
+            reason: "The sibling file uses the same name.",
+          },
+        ],
+      },
+    ],
+  };
+
+  // Text gzip can't shrink, so the ledger's size is close to the text's.
+  function incompressible(chars: number) {
+    return Buffer.from(crypto.getRandomValues(new Uint8Array(chars))).toString(
+      "base64",
+    );
+  }
+
+  test("starts a ledger with the first review's round", () => {
+    const body = new ReviewCommentFormatter(pr).review(
+      review(
+        [finding("high", "Throws on [].")],
+        [
+          {
+            finding: finding("low", "Minor."),
+            reason: "Guarded by the caller.",
+          },
+        ],
+      ),
+    );
+
+    expect(readLedger(body)).toEqual({
+      version: 1,
+      rounds: [
+        {
+          headSha: "abc1234def",
+          entries: [
+            {
+              ...finding("high", "Throws on []."),
+              status: "reported",
+            },
+            {
+              ...finding("low", "Minor."),
+              status: "dropped",
+              reason: "Guarded by the caller.",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  test("adds the review's round after the earlier ones", () => {
+    const formatter = new ReviewCommentFormatter(pr);
+    formatter.setLedger(earlier);
+
+    const rounds = readLedger(formatter.review(review([])))?.rounds ?? [];
+
+    expect(
+      rounds.map(({ headSha }) => {
+        return headSha;
+      }),
+    ).toEqual(["1111111", "abc1234def"]);
+    expect(rounds[0]).toEqual(earlier.rounds[0]);
+  });
+
+  test("carries the earlier rounds through the running, failed and cancelled statuses", () => {
+    const formatter = new ReviewCommentFormatter(pr);
+    formatter.setLedger(earlier);
+
+    for (const body of [
+      formatter.running(),
+      formatter.failure(new Error("rate limited")),
+      formatter.failure(new Error("aborted"), { cancelled: true }),
+    ]) {
+      expect(readLedger(body)).toEqual(earlier);
+    }
+  });
+
+  test("leaves the statuses alone on a PR's first review", () => {
+    expect(new ReviewCommentFormatter(pr).running()).not.toContain(
+      "diffcop:ledger",
+    );
+  });
+
+  test("redacts secrets from the ledger", () => {
+    const formatter = new ReviewCommentFormatter(pr, { secrets: ["sk-123"] });
+
+    const body = formatter.review(
+      review([finding("high", "Found sk-123 in the env.")]),
+    );
+
+    expect(readLedger(body)?.rounds[0]?.entries[0]?.explanation).toBe(
+      "Found *** in the env.",
+    );
+  });
+
+  test("makes room for the ledger by truncating the visible review sooner", () => {
+    const formatter = new ReviewCommentFormatter(pr);
+    formatter.setLedger({
+      version: 1,
+      rounds: [
+        {
+          headSha: "1111111",
+          entries: [
+            {
+              ...finding("nit", incompressible(8_000)),
+              status: "reported",
+            },
+          ],
+        },
+      ],
+    });
+
+    const body = formatter.review(
+      review([finding("high", "x".repeat(70_000))]),
+    );
+
+    expect(body.length).toBeLessThan(65_536);
+    expect(withoutLedger(body)).toContain("_Review truncated;");
+    expect(readLedger(body)?.rounds).toHaveLength(2);
+  });
+
+  test("trims a ledger that outgrows its share of the comment, oldest explanations first", () => {
+    const formatter = new ReviewCommentFormatter(pr);
+    formatter.setLedger({
+      version: 1,
+      rounds: ["1111111", "2222222"].map((headSha) => {
+        return {
+          headSha: headSha,
+          entries: [
+            {
+              ...finding("nit", incompressible(9_000)),
+              status: "dropped" as const,
+              reason: "Deliberate.",
+            },
+          ],
+        };
+      }),
+    });
+
+    const ledger = readLedger(formatter.running());
+
+    expect(formatter.running().length).toBeLessThan(21_000);
+    expect(ledger?.rounds).toHaveLength(2);
+    expect(ledger?.rounds[0]?.entries[0]?.explanation).toBeUndefined();
+    expect(ledger?.rounds[0]?.entries[0]?.reason).toBe("Deliberate.");
+    expect(ledger?.rounds[1]?.entries[0]?.explanation).toBeDefined();
+  });
+
+  test("keeps the ledger ahead of the saved review when both don't fit", () => {
+    const body = new ReviewCommentFormatter(pr).review(
+      review([finding("high", incompressible(26_000))]),
+    );
+
+    expect(body.length).toBeLessThan(65_000);
+    expect(readSavedReview(body)).toBeUndefined();
+    expect(readLedger(body)?.rounds).toHaveLength(1);
+  });
+
+  test("keeps a ledger passed with a re-checked review as it is", () => {
+    const saved: SavedReview = {
+      version: 1,
+      headSha: "fedcba98765",
+      warnings: [],
+      result: review([]),
+    };
+
+    const body = new ReviewCommentFormatter(pr).savedReview(saved, {
+      ledger: earlier,
+    });
+
+    expect(readLedger(body)).toEqual(earlier);
+    expect(readSavedReview(body)).toEqual(saved);
+  });
+
+  test("says in the footer which commit a re-review focused on changes since", () => {
+    const body = new ReviewCommentFormatter(pr).review({
+      ...review([]),
+      rereview: {
+        since: "1111111222",
+        settled: [],
+        leftOut: 0,
+      },
+    });
+
+    expect(body).toContain(
+      "<sub>Reviewed abc1234, focused on changes since 1111111 · 5s · 1 tool call</sub>",
+    );
+  });
+
+  test("saves what a re-review settled, so a description re-check renders it again", () => {
+    const rereview = {
+      since: "1111111222",
+      settled: [
+        {
+          finding: finding("nit", "Rename it."),
+          reason: "Declined in round 1.",
+        },
+      ],
+      leftOut: 3,
+    };
+
+    const body = new ReviewCommentFormatter(pr).review({
+      ...review([]),
+      rereview: rereview,
+    });
+
+    expect(body).toContain("<b>Settled in an earlier round (1)</b>");
+    expect(readSavedReview(body)?.result.rereview).toEqual(rereview);
+    expect(readLedger(body)?.rounds[0]?.entries).toEqual([
+      {
+        ...finding("nit", "Rename it."),
+        status: "settled",
+        reason: "Declined in round 1.",
+      },
+    ]);
   });
 });

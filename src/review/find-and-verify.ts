@@ -10,6 +10,8 @@ import type { ReviewReporter } from "@/reporter/review-reporter";
 import {
   duplicatesSchema,
   findingsSchema,
+  NO_VERDICT,
+  preferFresh,
   removeDuplicates,
   splitByVerdict,
   verdictsSchema,
@@ -20,7 +22,11 @@ import type {
   FinderRun,
   MergedFinding,
   ReviewResult,
+  SettledFinding,
 } from "@/review/findings";
+import { touchesDelta } from "@/review/review-delta";
+import type { ReviewDelta } from "@/review/review-delta";
+import { carriedFindings, isMajor } from "@/review/review-ledger";
 import { toError } from "@/util/errors";
 import { mapLimit } from "@/util/map-limit";
 
@@ -47,6 +53,23 @@ export function verificationBatches(findings: Finding[]) {
     }
     return batches;
   });
+}
+
+// Code an earlier round already saw gets no second pass for minor findings: each
+// round would otherwise turn up a few more, and the review would never settle.
+function staysOnRereview(finding: Finding, delta: ReviewDelta | undefined) {
+  return (
+    !delta ||
+    isMajor(finding) ||
+    finding.scope === "description" ||
+    touchesDelta(finding, delta)
+  );
+}
+
+function count(lists: Finding[][]) {
+  return lists.reduce((sum, list) => {
+    return sum + list.length;
+  }, 0);
 }
 
 function finderFailedWarning(files: string[] | undefined, error: Error) {
@@ -149,25 +172,35 @@ export class FindAndVerify {
       })
       .filter(Boolean)
       .join(" ");
-    const kept = settled.map((outcome) => {
+    const { previous } = context;
+    const reported = settled.map((outcome) => {
       if (outcome.status === "rejected") {
         return [];
       }
       return outcome.value.output.findings.filter(keep);
     });
-    let findings = kept.flat();
+    const kept = reported.map((list) => {
+      return list.filter((finding) => {
+        return staysOnRereview(finding, previous?.delta);
+      });
+    });
+    const fresh = kept.flat();
+    const carried = new Set(previous ? carriedFindings(previous.rounds) : []);
+    let findings = [...fresh, ...carried];
     const merging: AgentResult<unknown>[] = [];
     const merged: MergedFinding[] = [];
-    if (found.length > 1 && findings.length > 1) {
+    const repeatable =
+      found.length > 1 || (carried.size > 0 && fresh.length > 0);
+    if (repeatable && findings.length > 1) {
       const deduplicated = await this.#deduplicate(
         context,
         findings,
         abortSignal,
       );
       if (deduplicated) {
-        const deduped = removeDuplicates(
-          findings,
-          deduplicated.output.duplicates,
+        const deduped = preferFresh(
+          removeDuplicates(findings, deduplicated.output.duplicates),
+          carried,
         );
         findings = deduped.kept;
         merged.push(...deduped.merged);
@@ -178,6 +211,7 @@ export class FindAndVerify {
     const verified: AgentResult<unknown>[] = [];
     const confirmed: Finding[] = [];
     const dropped: DroppedFinding[] = [];
+    const settledEarlier: SettledFinding[] = [];
     if (findings.length > 0) {
       await this.#reporter.verifying(findings.length);
       const batches = verificationBatches(findings);
@@ -187,7 +221,11 @@ export class FindAndVerify {
         async (batch) => {
           return await this.#agent.run({
             cwd: context.repoRoot,
-            prompt: this.#promptBuilder.buildVerification(context, batch),
+            prompt: this.#promptBuilder.buildVerification(
+              context,
+              batch,
+              carried,
+            ),
             output: verdictsSchema,
             reporter: this.#reporter,
             abortSignal: abortSignal,
@@ -200,7 +238,14 @@ export class FindAndVerify {
           result.output.verdicts,
         );
         confirmed.push(...split.confirmed);
-        dropped.push(...split.dropped);
+        // A refuted finding from the last round was fixed since, so it isn't listed as dropped.
+        dropped.push(
+          ...split.dropped.filter(({ finding, reason }) => {
+            return !carried.has(finding) || reason === NO_VERDICT;
+          }),
+        );
+        // Without earlier rounds nothing can be settled, so the verdict counts as a refutation.
+        (previous ? settledEarlier : dropped).push(...split.settled);
         verified.push(result);
       });
     }
@@ -217,6 +262,13 @@ export class FindAndVerify {
         durationMs: this.#now() - startedAt,
       },
     };
+    if (previous) {
+      result.rereview = {
+        ...(previous.delta && { since: previous.delta.since }),
+        settled: settledEarlier,
+        leftOut: count(reported) - count(kept),
+      };
+    }
     if (finders.length > 1) {
       result.finders = finders.map(({ files }, index) => {
         const outcome = settled[index];

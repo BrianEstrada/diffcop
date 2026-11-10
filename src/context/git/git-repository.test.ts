@@ -14,6 +14,10 @@ async function git(...args: string[]) {
     .quiet();
 }
 
+async function revParse(ref: string) {
+  return (await $`git rev-parse ${ref}`.cwd(dir).quiet().text()).trim();
+}
+
 beforeAll(async () => {
   // Git hooks export GIT_DIR and friends, which would point these commands at
   // diffcop's own repository instead of the fixture.
@@ -166,5 +170,38 @@ describe("GitRepository", () => {
   test("mergeBase rejects an unknown ref", async () => {
     const repository = new GitRepository(dir);
     expect(repository.mergeBase("no-such-ref")).rejects.toThrow();
+  });
+
+  test("headSha is the commit checked out", async () => {
+    const repository = new GitRepository(dir);
+    expect(await repository.headSha()).toBe(await revParse("feature"));
+  });
+
+  test("isAncestor is true only for a commit in HEAD's history", async () => {
+    const repository = new GitRepository(dir);
+    await git("branch", "sibling", "main");
+    await git("checkout", "-q", "sibling");
+    await git("commit", "-q", "--allow-empty", "-m", "elsewhere");
+    await git("checkout", "-q", "feature");
+
+    expect(await repository.isAncestor(await revParse("main"))).toBe(true);
+    expect(await repository.isAncestor(await revParse("sibling"))).toBe(false);
+    expect(await repository.isAncestor("0".repeat(40))).toBe(false);
+  });
+
+  test("diffOfFilesSince covers only the given paths, with a/ and b/ prefixes whatever the config", async () => {
+    await git("config", "diff.mnemonicPrefix", "true");
+    try {
+      const repository = new GitRepository(dir);
+      const diff = await repository.diffOfFilesSince(await revParse("main"), [
+        "a.txt",
+      ]);
+
+      expect(diff).toContain("--- a/a.txt\n+++ b/a.txt\n");
+      expect(diff).toContain("+two");
+      expect(diff).not.toContain("b.txt");
+    } finally {
+      await git("config", "--unset", "diff.mnemonicPrefix");
+    }
   });
 });

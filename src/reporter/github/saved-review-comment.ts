@@ -2,6 +2,7 @@ import type { RunStats } from "@/agent/reviewer-agent";
 import type { SavedReviewStore } from "@/review/description-rechecker";
 import type { SavedReview } from "@/review/saved-review";
 import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
+import { readLedger } from "@/reporter/github/ledger-marker";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
 import type { StickyComment } from "@/reporter/github/sticky-comment";
 
@@ -34,7 +35,11 @@ export class SavedReviewComment implements SavedReviewStore {
       if (!updated) {
         return undefined;
       }
-      return this.#formatter.savedReview(updated, { recheck: recheck });
+      // A re-check changes only description findings, which the ledger doesn't hold.
+      return this.#formatter.savedReview(updated, {
+        recheck: recheck,
+        ledger: readLedger(body),
+      });
     });
   }
 }

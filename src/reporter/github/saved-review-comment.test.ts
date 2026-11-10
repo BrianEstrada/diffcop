@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
+import { readLedger } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import { SavedReviewComment } from "@/reporter/github/saved-review-comment";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
@@ -102,6 +103,24 @@ describe("SavedReviewComment", () => {
       "description re-checked in 5s · 2 tool calls",
     );
     expect(readSavedReview(comment.body ?? "")?.result.findings).toEqual([]);
+  });
+
+  test("keeps the comment's ledger when it rewrites the review", async () => {
+    const comment = new FakeComment(reviewed);
+    const ledger = readLedger(reviewed);
+
+    await new SavedReviewComment(comment, formatter).save(
+      (current) => {
+        return current;
+      },
+      {
+        durationMs: 5_000,
+        toolCalls: 2,
+      },
+    );
+
+    expect(ledger?.rounds).toHaveLength(1);
+    expect(readLedger(comment.body ?? "")).toEqual(ledger);
   });
 
   test("leaves a comment alone once a newer review is running", async () => {

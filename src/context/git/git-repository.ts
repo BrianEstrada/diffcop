@@ -85,6 +85,36 @@ export class GitRepository implements Repository {
     return this.#run("diff", ref);
   }
 
+  async headSha() {
+    return this.#run("rev-parse", "HEAD");
+  }
+
+  async isAncestor(sha: string) {
+    return this.#run("merge-base", "--is-ancestor", sha, "HEAD").then(
+      () => {
+        return true;
+      },
+      () => {
+        return false;
+      },
+    );
+  }
+
+  async diffOfFilesSince(ref: string, paths: string[]) {
+    return this.#run(
+      "-c",
+      "core.quotepath=false",
+      "diff",
+      "--no-color",
+      "--no-ext-diff",
+      "--src-prefix=a/",
+      "--dst-prefix=b/",
+      ref,
+      "--",
+      ...paths,
+    );
+  }
+
   async hashObject(path: string) {
     return this.#run("hash-object", "--", path);
   }
