@@ -2,7 +2,7 @@ import { fitLedger, reviewLedgerSchema } from "@/review/review-ledger";
 import type { ReviewLedger } from "@/review/review-ledger";
 
 // Gzipped, then base64: a ledger of several rounds would otherwise outgrow the comment.
-const LEDGER = /<!-- diffcop:ledger=([A-Za-z0-9+/=]+) -->/;
+const LEDGER = /<!-- diffcop:ledger=([A-Za-z0-9+/=]+) -->/g;
 
 // Secrets are matched as JSON escapes them, so one with a quote or backslash is still caught.
 function encode(ledger: ReviewLedger, secrets: string[]) {
@@ -31,7 +31,8 @@ export function ledgerMarker(
 
 // Undefined for a comment without one, such as a PR's first review or a comment from before ledgers.
 export function readLedger(body: string): ReviewLedger | undefined {
-  const encoded = body.match(LEDGER)?.[1];
+  // The last one: the marker follows the visible review, where a finding's text can quote one.
+  const encoded = [...body.matchAll(LEDGER)].at(-1)?.[1];
   if (!encoded) {
     return undefined;
   }

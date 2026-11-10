@@ -108,6 +108,14 @@ describe("ledgerMarker", () => {
 });
 
 describe("readLedger", () => {
+  test("reads the marker at the end, past one quoted in the review's text", () => {
+    const quoted = "A finding that quotes `<!-- diffcop:ledger=AAAA -->`.";
+
+    expect(
+      readLedger(`${quoted}\n${ledgerMarker(ledger, [], ROOMY) ?? ""}`),
+    ).toEqual(ledger);
+  });
+
   test.each([
     ["a comment without one", "## diffcop review"],
     ["text that isn't gzip", "<!-- diffcop:ledger=AAAA -->"],
