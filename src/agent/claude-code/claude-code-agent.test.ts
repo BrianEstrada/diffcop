@@ -31,14 +31,29 @@ interface Asks {
 let turns: (Answer | Asks | undefined)[] = [];
 let sent: unknown[] = [];
 let instructions: string[] = [];
-// "manifest" for each skills manifest write and "turn" for each turn, in order.
+// "bootstrap", "manifest", "session" and "turn" as each happens, in order.
 let order: string[] = [];
 // How many of the next skills manifest writes fail.
 let manifestFailures = 0;
+// How many of the next bridge installs fail.
+let bootstrapFailures = 0;
 
 // Bun swaps the binding the agent module already imported.
 await mock.module("@ai-sdk/harness/agent", () => {
   return {
+    createHarnessSandboxTemplate: async () => {
+      return {
+        identity: "bootstrap",
+        prepare: async () => {
+          await Bun.sleep(1);
+          if (bootstrapFailures > 0) {
+            bootstrapFailures--;
+            throw new Error("pnpm install failed");
+          }
+          order.push("bootstrap");
+        },
+      };
+    },
     HarnessAgent: class {
       readonly #settings: FakeSettings;
 
@@ -48,6 +63,7 @@ await mock.module("@ai-sdk/harness/agent", () => {
       }
 
       async createSession() {
+        order.push("session");
         return { destroy: async () => {} };
       }
 
@@ -202,6 +218,7 @@ describe("ClaudeCodeReviewerAgent", () => {
     instructions = [];
     order = [];
     manifestFailures = 0;
+    bootstrapFailures = 0;
   });
 
   test("returns what the reviewer submits", async () => {
@@ -265,11 +282,42 @@ describe("ClaudeCodeReviewerAgent", () => {
     expect(result.stats.costUsd).toBe(0.1);
   });
 
-  test("writes the skills manifest once, before any parallel session's turn", async () => {
+  test("installs the bridge and writes the skills manifest once, before any parallel session", async () => {
     turns = [{ ok: true }, { ok: true }, { ok: true }];
     const agent = new ClaudeCodeReviewerAgent();
     await Promise.all([review(agent), review(agent), review(agent)]);
-    expect(order).toEqual(["manifest", "turn", "turn", "turn"]);
+    expect(order.slice(0, 3)).toEqual(["bootstrap", "manifest", "session"]);
+    expect(order.toSorted()).toEqual([
+      "bootstrap",
+      "manifest",
+      "session",
+      "session",
+      "session",
+      "turn",
+      "turn",
+      "turn",
+    ]);
+  });
+
+  test("fails only one run when the bridge install fails, and the next run installs it", async () => {
+    turns = [{ ok: true }, { ok: true }];
+    bootstrapFailures = 1;
+    const agent = new ClaudeCodeReviewerAgent();
+    const settled = await Promise.allSettled([
+      review(agent),
+      review(agent),
+      review(agent),
+    ]);
+    expect(
+      settled.map(({ status }) => {
+        return status;
+      }),
+    ).toEqual(["rejected", "fulfilled", "fulfilled"]);
+    expect(
+      order.filter((step) => {
+        return step === "bootstrap" || step === "manifest";
+      }),
+    ).toEqual(["bootstrap", "manifest"]);
   });
 
   test("fails only one run when a manifest write fails, and the next run writes it", async () => {
@@ -286,7 +334,11 @@ describe("ClaudeCodeReviewerAgent", () => {
         return status;
       }),
     ).toEqual(["rejected", "fulfilled", "fulfilled"]);
-    expect(order).toEqual(["manifest", "turn", "turn"]);
+    expect(
+      order.filter((step) => {
+        return step === "manifest";
+      }),
+    ).toEqual(["manifest"]);
   });
 
   test("fails when the reviewer keeps asking after every denial", async () => {

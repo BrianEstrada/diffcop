@@ -1,4 +1,8 @@
-import { HarnessAgent } from "@ai-sdk/harness/agent";
+import {
+  createHarnessSandboxTemplate,
+  HarnessAgent,
+} from "@ai-sdk/harness/agent";
+import type { HarnessAgentAdapter } from "@ai-sdk/harness/agent";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
 import { resolveSandboxHomeDir, writeSkills } from "@ai-sdk/harness/utils";
 import type { Experimental_SandboxSession } from "@ai-sdk/provider-utils";
@@ -134,18 +138,25 @@ export const SUBMIT_REMINDER = `You ended without calling ${SUBMIT_TOOL}. Call i
 
 export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   readonly #options: ClaudeCodeReviewerAgentOptions;
-  #skillsManifest = Promise.resolve(false);
+  #homePrepared = Promise.resolve(false);
 
   constructor(options: ClaudeCodeReviewerAgentOptions = {}) {
     this.#options = options;
   }
 
-  // Each turn, the harness rewrites ~/.claude/skills' manifest through one fixed
-  // temp file until it's current, so parallel sessions on a fresh machine race.
-  // Runs queue here until one has written it; a failed write fails only its run.
-  async #writeSkillsManifest(sandbox: Experimental_SandboxSession) {
-    const attempt = this.#skillsManifest.then(async (written) => {
-      if (!written) {
+  // On a fresh machine every session installs the harness's bridge in
+  // ~/.ai-sdk-harness and writes ~/.claude/skills' manifest; neither is safe in
+  // parallel. Runs queue until one has done both; a failure fails only its run.
+  async #prepareHome(
+    harness: HarnessAgentAdapter,
+    sandbox: Experimental_SandboxSession,
+  ) {
+    const attempt = this.#homePrepared.then(async (prepared) => {
+      if (!prepared) {
+        const template = await createHarnessSandboxTemplate({
+          harnesses: [harness],
+        });
+        await template?.prepare({ session: sandbox });
         await writeSkills({
           sandbox: sandbox,
           homePath: await resolveSandboxHomeDir({ sandbox: sandbox }),
@@ -155,7 +166,7 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
       }
       return true;
     });
-    this.#skillsManifest = attempt.catch(() => {
+    this.#homePrepared = attempt.catch(() => {
       return false;
     });
     await attempt;
@@ -171,22 +182,23 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     const startedAt = performance.now();
     const port = leaseLocalPort();
     let submitted: { answer: T } | undefined;
-    const agent = new HarnessAgent({
-      harness: createClaudeCode({
-        maxTurns: this.#options.maxTurns,
-        effort: this.#options.effort,
-        // The local sandbox predates `getPortEndpoint`, so pass the bridge port
-        // and endpoint explicitly.
-        port: port,
-        portEndpoint: { url: `ws://127.0.0.1:${port}` },
-        // Tool search would otherwise hide the tool until the model looks it up.
-        toolHints: {
-          [SUBMIT_TOOL]: {
-            readOnly: true,
-            alwaysLoad: true,
-          },
+    const harness = createClaudeCode({
+      maxTurns: this.#options.maxTurns,
+      effort: this.#options.effort,
+      // The local sandbox predates `getPortEndpoint`, so pass the bridge port
+      // and endpoint explicitly.
+      port: port,
+      portEndpoint: { url: `ws://127.0.0.1:${port}` },
+      // Tool search would otherwise hide the tool until the model looks it up.
+      toolHints: {
+        [SUBMIT_TOOL]: {
+          readOnly: true,
+          alwaysLoad: true,
         },
-      }),
+      },
+    });
+    const agent = new HarnessAgent({
+      harness: harness,
       model: this.#options.model,
       instructions: `${prompt.instructions}\n\n${SUBMIT_INSTRUCTION}`,
       permissionMode: "allow-reads",
@@ -209,6 +221,7 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     const sandboxSession = await createLocalSandbox({
       cwd: cwd,
     }).createSession();
+    await this.#prepareHome(harness, sandboxSession);
     const session = await agent.createSession({
       sandboxSession: sandboxSession,
     });
@@ -295,7 +308,6 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     }
 
     try {
-      await this.#writeSkillsManifest(sandboxSession);
       const turns = await deniedUntilDone(prompt.content);
       if (submitted === undefined) {
         turns.push(...(await deniedUntilDone([SUBMIT_REMINDER])));
