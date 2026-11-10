@@ -1,11 +1,5 @@
-import {
-  createHarnessSandboxTemplate,
-  HarnessAgent,
-} from "@ai-sdk/harness/agent";
-import type { HarnessAgentAdapter } from "@ai-sdk/harness/agent";
+import { HarnessAgent } from "@ai-sdk/harness/agent";
 import { createClaudeCode } from "@ai-sdk/harness-claude-code";
-import { resolveSandboxHomeDir, writeSkills } from "@ai-sdk/harness/utils";
-import type { Experimental_SandboxSession } from "@ai-sdk/provider-utils";
 import { tool } from "ai";
 import type { ModelMessage } from "ai";
 import { createLocalSandbox } from "ai-sdk-sandbox-local";
@@ -18,6 +12,7 @@ import type {
   RunStats,
 } from "@/agent/reviewer-agent";
 import { sumStats } from "@/agent/reviewer-agent";
+import { FirstAlone } from "@/util/first-alone";
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 
@@ -138,67 +133,50 @@ export const SUBMIT_REMINDER = `You ended without calling ${SUBMIT_TOOL}. Call i
 
 export class ClaudeCodeReviewerAgent implements ReviewerAgent {
   readonly #options: ClaudeCodeReviewerAgentOptions;
-  #homePrepared = Promise.resolve(false);
+  // On a fresh machine each session installs the harness's bridge in
+  // ~/.ai-sdk-harness and writes ~/.claude/skills' manifest, and neither is safe
+  // in parallel. Both are done once a run has a chunk back from Claude Code.
+  readonly #setup = new FirstAlone();
 
   constructor(options: ClaudeCodeReviewerAgentOptions = {}) {
     this.#options = options;
   }
 
-  // On a fresh machine every session installs the harness's bridge in
-  // ~/.ai-sdk-harness and writes ~/.claude/skills' manifest; neither is safe in
-  // parallel. Runs queue until one has done both; a failure fails only its run.
-  async #prepareHome(
-    harness: HarnessAgentAdapter,
-    sandbox: Experimental_SandboxSession,
-  ) {
-    const attempt = this.#homePrepared.then(async (prepared) => {
-      if (!prepared) {
-        const template = await createHarnessSandboxTemplate({
-          harnesses: [harness],
-        });
-        await template?.prepare({ session: sandbox });
-        await writeSkills({
-          sandbox: sandbox,
-          homePath: await resolveSandboxHomeDir({ sandbox: sandbox }),
-          skillsDir: ".claude/skills",
-          skills: [],
-        });
-      }
-      return true;
-    });
-    this.#homePrepared = attempt.catch(() => {
-      return false;
-    });
-    await attempt;
+  async run<T>(run: AgentRun<T>): Promise<AgentResult<T>> {
+    const setUp = await this.#setup.enter();
+    try {
+      run.abortSignal?.throwIfAborted();
+      return await this.#run(run, () => {
+        setUp(true);
+      });
+    } finally {
+      setUp(false);
+    }
   }
 
-  async run<T>({
-    cwd,
-    prompt,
-    output,
-    reporter,
-    abortSignal,
-  }: AgentRun<T>): Promise<AgentResult<T>> {
+  async #run<T>(
+    { cwd, prompt, output, reporter, abortSignal }: AgentRun<T>,
+    onChunk: () => void,
+  ): Promise<AgentResult<T>> {
     const startedAt = performance.now();
     const port = leaseLocalPort();
     let submitted: { answer: T } | undefined;
-    const harness = createClaudeCode({
-      maxTurns: this.#options.maxTurns,
-      effort: this.#options.effort,
-      // The local sandbox predates `getPortEndpoint`, so pass the bridge port
-      // and endpoint explicitly.
-      port: port,
-      portEndpoint: { url: `ws://127.0.0.1:${port}` },
-      // Tool search would otherwise hide the tool until the model looks it up.
-      toolHints: {
-        [SUBMIT_TOOL]: {
-          readOnly: true,
-          alwaysLoad: true,
-        },
-      },
-    });
     const agent = new HarnessAgent({
-      harness: harness,
+      harness: createClaudeCode({
+        maxTurns: this.#options.maxTurns,
+        effort: this.#options.effort,
+        // The local sandbox predates `getPortEndpoint`, so pass the bridge port
+        // and endpoint explicitly.
+        port: port,
+        portEndpoint: { url: `ws://127.0.0.1:${port}` },
+        // Tool search would otherwise hide the tool until the model looks it up.
+        toolHints: {
+          [SUBMIT_TOOL]: {
+            readOnly: true,
+            alwaysLoad: true,
+          },
+        },
+      }),
       model: this.#options.model,
       instructions: `${prompt.instructions}\n\n${SUBMIT_INSTRUCTION}`,
       permissionMode: "allow-reads",
@@ -221,9 +199,9 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
     const sandboxSession = await createLocalSandbox({
       cwd: cwd,
     }).createSession();
-    await this.#prepareHome(harness, sandboxSession);
     const session = await agent.createSession({
       sandboxSession: sandboxSession,
+      abortSignal: abortSignal,
     });
 
     let toolCalls = 0;
@@ -275,6 +253,10 @@ export class ClaudeCodeReviewerAgent implements ReviewerAgent {
             break;
           case "error":
             throw part.error;
+        }
+        // The harness sends `start` itself, before its setup has run.
+        if (part.type !== "start") {
+          onChunk();
         }
       }
       const usage = await result.usage;
