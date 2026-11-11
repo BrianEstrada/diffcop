@@ -270,13 +270,17 @@ export class FindAndVerify {
       };
     }
     if (finders.length > 1) {
-      result.finders = finders.map(({ files }, index) => {
+      result.finders = finders.map(({ files, chunk, lines }, index) => {
         const outcome = settled[index];
         const finder: FinderRun = {
           findings: kept[index]?.length ?? 0,
         };
         if (files) {
           finder.files = files;
+        }
+        if (chunk !== undefined && lines !== undefined) {
+          finder.chunk = chunk;
+          finder.lines = lines;
         }
         if (outcome?.status === "fulfilled") {
           finder.stats = outcome.value.stats;

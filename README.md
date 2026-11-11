@@ -150,7 +150,9 @@ The review opens with one headline:
 - ✅ **All good**: nothing found.
 
 Below it, collapsible sections list the findings, bugs that predate the diff, what verification
-dropped and why, what an earlier round settled, and the files the reviewer read.
+dropped and why, what an earlier round settled, and the files the reviewer read. The last one,
+**Run details**, has the time, tokens and cost of each run, and how the diff was split: each
+chunk's files, changed lines and findings.
 
 On a PR, the reviewer also sees the title, description, labels, comments and reviews, sanitized
 before they reach the prompt. It treats the description as the author's claims, not as proof.

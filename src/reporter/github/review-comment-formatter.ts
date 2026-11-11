@@ -3,12 +3,13 @@ import type { PullRequestContext } from "@/context/github/pull-request-context";
 import type { ReviewResult } from "@/review/findings";
 import { appendRound } from "@/review/review-ledger";
 import type { ReviewLedger } from "@/review/review-ledger";
+import { summarizeFinders } from "@/review/saved-review";
 import type { SavedReview } from "@/review/saved-review";
 import { ledgerMarker } from "@/reporter/github/ledger-marker";
 import { savedReviewMarker } from "@/reporter/github/saved-review-marker";
 import { reviewLayout, sectionHeading } from "@/reporter/review-layout";
 import type { ReviewLayout, ReviewSection } from "@/reporter/review-layout";
-import { formatStats } from "@/reporter/stats";
+import { runDetailsSection } from "@/reporter/run-details";
 
 // GitHub rejects comment bodies over 65,536 characters.
 const MAX_COMMENT_CHARS = 60_000;
@@ -98,9 +99,9 @@ export class ReviewCommentFormatter {
     );
   }
 
-  // Leaves out the per-finder detail, which the comment doesn't show, to keep the saved review small.
+  // Saves each finder's numbers but not its file paths or the merged findings, to keep the saved review small.
   review(reviewed: ReviewResult) {
-    const { finders: _finders, merged: _merged, ...result } = reviewed;
+    const { finders, merged, ...result } = reviewed;
     return this.savedReview(
       {
         version: 1,
@@ -108,13 +109,15 @@ export class ReviewCommentFormatter {
         descriptionAt: this.#pr.triggerTime,
         warnings: [...this.#warnings],
         result: result,
+        ...(finders && { finders: summarizeFinders(finders) }),
+        ...(merged && { merged: merged.length }),
       },
       { ledger: appendRound(this.#ledger, this.#pr.headSha, reviewed) },
     );
   }
 
-  // `recheck` is the run that re-checked only the description, shown beside the review's own
-  // stats. `ledger` is kept in the comment as given, ahead of the saved review when both don't fit.
+  // `recheck` is the run that re-checked only the description, listed under the review's own
+  // run. `ledger` is kept in the comment as given, ahead of the saved review when both don't fit.
   savedReview(
     saved: SavedReview,
     { recheck, ledger }: { recheck?: RunStats; ledger?: ReviewLedger } = {},
@@ -125,18 +128,33 @@ export class ReviewCommentFormatter {
     if (since !== undefined) {
       reviewed.push(`focused on changes since ${since.slice(0, 7)}`);
     }
-    const footer = [reviewed.join(", "), formatStats(result.stats)];
-    if (recheck) {
-      footer.push(`description re-checked in ${formatStats(recheck)}`);
+    const footer = [reviewed.join(", ")];
+    const run = this.#runLink("run").trim();
+    if (run) {
+      footer.push(run);
     }
+    const { headline, sections } = reviewLayout(result);
+    const layout = {
+      headline: headline,
+      sections: [
+        ...sections,
+        runDetailsSection({
+          stats: result.stats,
+          recheck: recheck,
+          finders: saved.finders,
+          merged: saved.merged,
+          since: since,
+        }),
+      ],
+    };
     const kept = ledger && this.#ledgerMarker(ledger);
     const ledgerChars = kept ? kept.length + 1 : 0;
     const body = this.#frame(
       [
-        this.#body(reviewLayout(result), MAX_COMMENT_CHARS - ledgerChars),
+        this.#body(layout, MAX_COMMENT_CHARS - ledgerChars),
         "",
         "---",
-        `<sub>${footer.join(" · ")}${this.#runLink("run")}</sub>`,
+        `<sub>${footer.join(" · ")}</sub>`,
       ],
       warnings,
     );

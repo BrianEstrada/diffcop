@@ -148,6 +148,16 @@ describe("ReviewCommentFormatter.review", () => {
         "",
         "</details>",
         "",
+        "<details><summary><b>Run details</b></summary>",
+        "",
+        "| Run | Time | Tool calls | Input tokens | Cached | Output | Cost |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Review | 5s | 1 | – | – | – | – |",
+        "",
+        "One finder reviewed the whole diff.",
+        "",
+        "</details>",
+        "",
         "---",
         "<sub>Reviewed abc1234",
       ].join("\n"),
@@ -164,7 +174,7 @@ describe("ReviewCommentFormatter.review", () => {
     );
   });
 
-  test("puts stats and the run link in the footer", () => {
+  test("puts the stats in the run details, and only the commit and run link in the footer", () => {
     const body = new ReviewCommentFormatter(run).review({
       ...review([]),
       stats: {
@@ -180,7 +190,10 @@ describe("ReviewCommentFormatter.review", () => {
       return line.startsWith("<sub>");
     });
     expect(footer).toBe(
-      "<sub>Reviewed abc1234 · 1m 51s · 14 tool calls · 312K input tokens (95% cached) · 4.1K output · ~$0.42 [run](https://github.com/owner/repo/actions/runs/42)</sub>",
+      "<sub>Reviewed abc1234 · [run](https://github.com/owner/repo/actions/runs/42)</sub>",
+    );
+    expect(body).toContain(
+      "<details><summary><b>Run details</b></summary>\n\n| Run | Time | Tool calls | Input tokens | Cached | Output | Cost |\n| --- | --- | --- | --- | --- | --- | --- |\n| Review | 1m 51s | 14 | 312K | 95% | 4.1K | ~$0.42 |",
     );
   });
 
@@ -273,34 +286,73 @@ describe("ReviewCommentFormatter saved review", () => {
     expect(readSavedReview(formatter.review(result))).toEqual(expected);
   });
 
-  test("leaves the per-finder detail out of the saved review", () => {
+  test("saves each finder's numbers, without its file paths, and how many findings were merged", () => {
     const result = review([finding("low", "Claims a cache.", "description")]);
 
     const body = new ReviewCommentFormatter(triggered).review({
       ...result,
       finders: [
         {
-          files: ["a.ts"],
+          files: ["chunk/one.ts", "chunk/two.ts"],
+          chunk: 1,
+          lines: 412,
           findings: 1,
           stats: result.stats,
         },
+        {
+          findings: 0,
+          error: "never submitted",
+        },
       ],
-      merged: [],
+      merged: [
+        {
+          finding: finding("low", "Same as the other."),
+          into: finding("low", "Claims a cache.", "description"),
+        },
+      ],
     });
 
     const encoded = /diffcop:saved=(\S+)/.exec(body)?.[1] ?? "";
     const saved = Buffer.from(encoded, "base64").toString("utf8");
     expect(saved).toContain("Claims a cache.");
-    expect(saved).not.toContain('"finders"');
-    expect(saved).not.toContain('"merged"');
+    expect(saved).not.toContain("chunk/one.ts");
+    expect(saved).not.toContain("Same as the other.");
+    expect(readSavedReview(body)?.finders).toEqual([
+      {
+        files: 2,
+        chunk: 1,
+        lines: 412,
+        findings: 1,
+        stats: result.stats,
+      },
+      {
+        findings: 0,
+        error: "never submitted",
+      },
+    ]);
+    expect(readSavedReview(body)?.merged).toBe(1);
   });
 
-  test("renders a re-checked review from what was saved, beside the re-check's stats", () => {
+  test("renders a re-checked review from what was saved, with the re-check as a run of its own", () => {
     const saved: SavedReview = {
       version: 1,
       headSha: "fedcba98765",
       warnings: ["Large change."],
       result: review([]),
+      finders: [
+        {
+          chunk: 1,
+          files: 3,
+          lines: 400,
+          findings: 2,
+          stats: stats,
+        },
+        {
+          findings: 0,
+          stats: stats,
+        },
+      ],
+      merged: 1,
     };
     const body = new ReviewCommentFormatter(triggered).savedReview(saved, {
       recheck: {
@@ -311,9 +363,11 @@ describe("ReviewCommentFormatter saved review", () => {
 
     expect(body).toContain("> [!WARNING]\n> Large change.");
     expect(body).toContain("✅ **All good**");
+    expect(body).toContain("<sub>Reviewed fedcba9 · [run]");
     expect(body).toContain(
-      "<sub>Reviewed fedcba9 · 5s · 1 tool call · description re-checked in 12s · 3 tool calls [run]",
+      "| Review | 5s | 1 | – | – | – | – |\n| Description re-check | 12s | 3 | – | – | – | – |",
     );
+    expect(body).toContain("| Chunk 1 | 3 | 400 | 2 | 5s | 1 | – |");
     expect(readSavedReview(body)).toEqual(saved);
   });
 
@@ -599,7 +653,7 @@ describe("ReviewCommentFormatter ledger", () => {
     });
 
     expect(body).toContain(
-      "<sub>Reviewed abc1234, focused on changes since 1111111 · 5s · 1 tool call</sub>",
+      "<sub>Reviewed abc1234, focused on changes since 1111111</sub>",
     );
   });
 

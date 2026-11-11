@@ -88,6 +88,40 @@ describe("ReviewPromptBuilder.buildFinders", () => {
     );
   });
 
+  test("numbers each chunk and says how many changed lines it was sized by", () => {
+    const finders = builder.buildFinders(
+      {
+        ...context,
+        changedFiles: [
+          {
+            path: "a/x.ts",
+            additions: LINES_PER_CHUNK,
+            deletions: 20,
+          },
+          {
+            path: "b/y.ts",
+            additions: LINES_PER_CHUNK,
+            deletions: 0,
+          },
+        ],
+      },
+      "x",
+      6,
+    );
+
+    expect(
+      finders.map(({ chunk, lines }) => {
+        return [chunk, lines];
+      }),
+    ).toEqual([
+      [1, LINES_PER_CHUNK + 20],
+      [2, LINES_PER_CHUNK],
+      [1, LINES_PER_CHUNK + 20],
+      [2, LINES_PER_CHUNK],
+      [undefined, undefined],
+    ]);
+  });
+
   test("tells a chunk's finder that every changed file means its assigned files", () => {
     const [first] = builder.buildFinders(context, "x", 6);
 

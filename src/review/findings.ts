@@ -184,6 +184,9 @@ export interface Rereview {
 export interface FinderRun {
   // Absent for the whole-diff finder.
   files?: string[];
+  // Which chunk the files are, from 1, and the changed lines it was sized by.
+  chunk?: number;
+  lines?: number;
   findings: number;
   // Absent when the finder failed; `error` says why.
   stats?: RunStats;
