@@ -100,7 +100,7 @@ describe("SavedReviewComment", () => {
     expect(written).toBe(true);
     expect(comment.body).toContain("✅ **All good**");
     expect(comment.body).toContain(
-      "description re-checked in 5s · 2 tool calls",
+      "| Description re-check | 5s | 2 | – | – | – | – |",
     );
     expect(readSavedReview(comment.body ?? "")?.result.findings).toEqual([]);
   });

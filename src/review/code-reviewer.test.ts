@@ -507,15 +507,15 @@ describe("CodeReviewer", () => {
     expect(reviewed.findings).toEqual([finding("A"), finding("B")]);
     expect(reviewed.stats.toolCalls).toBe(14);
     expect(
-      reviewed.finders?.map(({ files, findings }) => {
-        return [files, findings];
+      reviewed.finders?.map(({ files, chunk, lines, findings }) => {
+        return [files, chunk, lines, findings];
       }),
     ).toEqual([
-      [["a/x.ts"], 1],
-      [["b/y.ts"], 1],
-      [["a/x.ts"], 0],
-      [["b/y.ts"], 0],
-      [undefined, 0],
+      [["a/x.ts"], 1, LINES_PER_CHUNK, 1],
+      [["b/y.ts"], 2, LINES_PER_CHUNK, 1],
+      [["a/x.ts"], 1, LINES_PER_CHUNK, 0],
+      [["b/y.ts"], 2, LINES_PER_CHUNK, 0],
+      [undefined, undefined, undefined, 0],
     ]);
     expect(reviewed.merged).toEqual([]);
   });

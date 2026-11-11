@@ -119,6 +119,9 @@ export interface FinderPrompt {
   prompt: ReviewPrompt;
   // The finder's share of the change; absent when it reviews the whole diff.
   files?: string[];
+  // Which chunk that share is, from 1, and the changed lines it was sized by.
+  chunk?: number;
+  lines?: number;
 }
 
 const PROMPT_TAGS = [
@@ -327,7 +330,7 @@ export class ReviewPromptBuilder {
     }
     const fileDiffs = splitDiffByFile(context.diff, context.changedFiles);
     const passes = Array.from({ length: CHUNK_PASSES }, (_, pass) => {
-      return chunks.map((chunk) => {
+      return chunks.map((chunk, index) => {
         const files = chunk.map((file) => {
           return file.path;
         });
@@ -337,6 +340,10 @@ export class ReviewPromptBuilder {
         return {
           prompt: this.#chunkFinder(context, request, files, fileDiffs),
           files: files,
+          chunk: index + 1,
+          lines: chunk.reduce((sum, file) => {
+            return sum + file.additions + file.deletions;
+          }, 0),
         };
       });
     });
