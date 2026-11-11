@@ -402,6 +402,31 @@ describe("ReviewPromptBuilder on a re-review", () => {
     ]);
   });
 
+  test("gives a re-review one finder when there's no last commit to compare against", () => {
+    expect(builder.buildFinders(withMemory, "x", 4)).toEqual([
+      { prompt: builder.build(withMemory, "x") },
+    ]);
+  });
+
+  test("splits the whole change again when a full review is asked for", () => {
+    const full: ReviewContext = {
+      ...context,
+      previous: {
+        rounds: rounds,
+        full: true,
+      },
+    };
+
+    const finders = builder.buildFinders(full, "x", 4);
+
+    expect(
+      finders.map(({ files }) => {
+        return files;
+      }),
+    ).toEqual([["a/x.ts"], ["b/y.ts"], ["a/x.ts"], ["b/y.ts"], undefined]);
+    expect(finders[0]?.prompt.content[0]).toContain("<previous_rounds>");
+  });
+
   test("still splits a re-review whose changes are large", () => {
     const large = parseDelta(
       "bbbbbbbbbbbbbbbb",
