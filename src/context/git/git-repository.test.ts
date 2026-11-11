@@ -14,6 +14,10 @@ async function git(...args: string[]) {
     .quiet();
 }
 
+async function revParse(ref: string) {
+  return (await $`git rev-parse ${ref}`.cwd(dir).quiet().text()).trim();
+}
+
 beforeAll(async () => {
   // Git hooks export GIT_DIR and friends, which would point these commands at
   // diffcop's own repository instead of the fixture.
@@ -166,5 +170,55 @@ describe("GitRepository", () => {
   test("mergeBase rejects an unknown ref", async () => {
     const repository = new GitRepository(dir);
     expect(repository.mergeBase("no-such-ref")).rejects.toThrow();
+  });
+
+  test("headSha is the commit checked out", async () => {
+    const repository = new GitRepository(dir);
+    expect(await repository.headSha()).toBe(await revParse("feature"));
+  });
+
+  test("isAncestor is true only for a commit in HEAD's history", async () => {
+    const repository = new GitRepository(dir);
+    await git("branch", "sibling", "main");
+    await git("checkout", "-q", "sibling");
+    await git("commit", "-q", "--allow-empty", "-m", "elsewhere");
+    await git("checkout", "-q", "feature");
+
+    expect(await repository.isAncestor(await revParse("main"))).toBe(true);
+    expect(await repository.isAncestor(await revParse("sibling"))).toBe(false);
+    expect(await repository.isAncestor("0".repeat(40))).toBe(false);
+  });
+
+  test("patchSince uses a/ and b/ prefixes and pairs renames, whatever the config", async () => {
+    const patched = await mkdtemp(join(tmpdir(), "diffcop-patch-"));
+    async function inPatched(...args: string[]) {
+      await $`git -c user.name=test -c user.email=test@example.com -c commit.gpgsign=false ${args}`
+        .cwd(patched)
+        .quiet();
+    }
+    try {
+      await inPatched("init", "-q", "-b", "main");
+      await Bun.write(join(patched, "old.txt"), "one\ntwo\nthree\n");
+      await Bun.write(join(patched, "a b.txt"), "one\n");
+      await inPatched("add", ".");
+      await inPatched("commit", "-q", "-m", "initial");
+      await inPatched("config", "diff.mnemonicPrefix", "true");
+      await inPatched("config", "diff.renames", "false");
+      await inPatched("mv", "old.txt", "new.txt");
+      await Bun.write(join(patched, "new.txt"), "one\ntwo\nthree\nfour\n");
+      await Bun.write(join(patched, "a b.txt"), "one\ntwo\n");
+
+      const diff = await new GitRepository(patched).patchSince("HEAD");
+
+      expect(diff).toContain("rename from old.txt\nrename to new.txt\n");
+      expect(diff).toContain("--- a/old.txt\n+++ b/new.txt\n@@ -1,3 +1,4 @@");
+      // Git ends a path that has a space with a tab.
+      expect(diff).toContain("--- a/a b.txt\t\n+++ b/a b.txt\t\n");
+    } finally {
+      await rm(patched, {
+        recursive: true,
+        force: true,
+      });
+    }
   });
 });

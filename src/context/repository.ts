@@ -12,5 +12,10 @@ export interface Repository {
   commitsSince(ref: string): Promise<string[]>;
   changedFilesSince(ref: string): Promise<ChangedFile[]>;
   diffSince(ref: string): Promise<string>;
+  headSha(): Promise<string>;
+  // False too when the commit isn't in the clone.
+  isAncestor(sha: string): Promise<boolean>;
+  // `diffSince` in one fixed format whatever git's config: `a/` and `b/` prefixes, renames paired.
+  patchSince(ref: string): Promise<string>;
   hashObject(path: string): Promise<string>;
 }

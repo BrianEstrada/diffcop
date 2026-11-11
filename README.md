@@ -49,6 +49,7 @@ diffcop review "review this code" --base origin/develop   # default: origin/HEAD
 diffcop review "review this code" --cwd ../other-repo
 diffcop review "quick pass" --effort low                  # faster, shallower review
 diffcop review "review this code" --maxChunks 4           # split a large diff into up to 4 chunks
+diffcop review "review this code" --ledger ledger.json    # remember findings between runs
 diffcop review "review this code" --reporter json | jq .findings
 ```
 
@@ -115,6 +116,7 @@ jobs:
 | `prompt`                  | Review this pull request for bugs, security issues, and regressions. | What to ask the reviewer.                             |
 | `effort`                  | `high`                                                               | `low` to `max`. Empty uses Claude Code's default.     |
 | `max-chunks`              | `1`                                                                  | `1` to `4`. Above 1, a large diff is split up.        |
+| `full`                    | `false`                                                              | On a re-review, open all of it to minor findings.     |
 | `debug`                   | `false`                                                              | Also log the reviewer's tool calls and thinking time. |
 
 The action installs Bun, Node and pnpm on the runner, so later steps in the same job see those
@@ -146,7 +148,7 @@ The review opens with one headline:
 - ✅ **All good**: nothing found.
 
 Below it, collapsible sections list the findings, bugs that predate the diff, what verification
-dropped and why, and the files the reviewer read.
+dropped and why, what an earlier round settled, and the files the reviewer read.
 
 On a PR, the reviewer also sees the title, description, labels, comments and reviews, sanitized
 before they reach the prompt. It treats the description as the author's claims, not as proof.
@@ -155,7 +157,33 @@ Editing only the title or description doesn't review the code again. If the last
 that the description doesn't match the diff, diffcop re-checks just the description and updates
 those findings in the comment, keeping the rest of the review. Otherwise it stops without calling
 the model. An edit made while a review is running gets the same treatment when that review
-finishes. A retargeted base, or a push, still gets a full review.
+finishes. A retargeted base, or a push, still reviews the code.
+
+### Reviewing a change again
+
+diffcop remembers what it found. On a PR it keeps a ledger of every round, hidden in its comment.
+For a local run, pass `--ledger <file>` and it keeps the ledger there. A round belongs to a commit,
+so reviewing the same commit twice redoes its round.
+
+When a change was reviewed before:
+
+- The reviewer sees what the earlier rounds reported and what verification dropped, and is told
+  not to raise those again.
+- High and medium bugs from the last round are checked again, so one that's still there stays in
+  the review.
+- A finding that repeats one already dropped, or one the author declined, goes under **Settled in
+  an earlier round** instead of being reported. The author's answers are read from the PR
+  description and comments, or from an entry's `answer` in a ledger file. A low finding or a nit
+  is settled once the author has seen it. A high or medium bug is settled only when the code
+  bears out the author's reason.
+- Low findings and nits are reported only on lines that changed since the last reviewed commit.
+  The footer names that commit.
+- With `--maxChunks` above 1, the split follows what changed since the last round, so a small fix
+  gets one finder.
+
+`--full` (`full` in the action) opens the whole change to low findings and nits again for one
+run. diffcop does the same on its own when the last reviewed commit is no longer in the branch's
+history, as after a rebase or force-push, and when the PR's base changes.
 
 ## Contributing
 

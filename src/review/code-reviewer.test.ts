@@ -13,9 +13,12 @@ import type { Finding, ReviewResult } from "@/review/findings";
 
 class FakeRepository implements Repository {
   readonly #changedFiles: ChangedFile[];
+  // What changed since the last review; undefined when that commit isn't an ancestor of HEAD.
+  readonly #delta: string | undefined;
 
-  constructor(changedFiles: ChangedFile[] = []) {
+  constructor(changedFiles: ChangedFile[] = [], delta?: string) {
     this.#changedFiles = changedFiles;
+    this.#delta = delta;
   }
 
   async root() {
@@ -44,6 +47,18 @@ class FakeRepository implements Repository {
 
   async diffSince() {
     return "+change";
+  }
+
+  async headSha() {
+    return "abc1234";
+  }
+
+  async isAncestor() {
+    return this.#delta !== undefined;
+  }
+
+  async patchSince() {
+    return this.#delta ?? "";
   }
 
   async hashObject() {
@@ -155,9 +170,10 @@ function createReviewer(
   reporter: ReviewReporter,
   changedFiles: ChangedFile[] = [],
   elapsedMs = runStats.durationMs,
+  delta?: string,
 ) {
   return new CodeReviewer(
-    new ReviewContextCollector(new FakeRepository(changedFiles)),
+    new ReviewContextCollector(new FakeRepository(changedFiles, delta)),
     new ReviewPromptBuilder(),
     agent,
     reporter,
@@ -690,5 +706,126 @@ describe("verificationBatches", () => {
       ["a.ts:6", "a.ts:9"],
       ["b.ts:1"],
     ]);
+  });
+});
+
+describe("CodeReviewer on a re-review", () => {
+  const rounds = [
+    {
+      headSha: "aaaaaaa",
+      entries: [
+        {
+          ...finding("Raised before"),
+          severity: "nit" as const,
+          status: "reported" as const,
+        },
+      ],
+    },
+  ];
+
+  const changedFiles = [
+    {
+      path: "a.ts",
+      additions: 3,
+      deletions: 0,
+    },
+  ];
+
+  // Only line 1 of a.ts changed since round 1.
+  const delta = [
+    "diff --git a/a.ts b/a.ts",
+    "--- a/a.ts",
+    "+++ b/a.ts",
+    "@@ -1 +1 @@",
+    "-old",
+    "+new",
+  ].join("\n");
+
+  function nit(title: string, line: number): Finding {
+    return {
+      ...finding(title),
+      severity: "nit",
+      startLine: line,
+      endLine: line,
+    };
+  }
+
+  function answers() {
+    return [
+      {
+        summary: "",
+        findings: [nit("On the change", 1), nit("On old code", 3)],
+      },
+      {
+        verdicts: [1, 2].map((id) => {
+          return {
+            id: id,
+            verdict: "confirmed",
+            reason: "Accurate.",
+          };
+        }),
+      },
+    ];
+  }
+
+  test("shows the finder the earlier rounds and keeps nits to what changed since", async () => {
+    const agent = new FakeAgent(answers());
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      changedFiles,
+      runStats.durationMs,
+      delta,
+    ).review({
+      request: "x",
+      rounds: rounds,
+    });
+
+    expect(agent.runs[0]?.prompt.content[0]).toContain(
+      "1.1. [reported] nit · a.ts:1-1 · Raised before",
+    );
+    expect(reviewed.findings).toEqual([nit("On the change", 1)]);
+    expect(reviewed.rereview).toEqual({
+      since: "aaaaaaa",
+      settled: [],
+      leftOut: 1,
+    });
+  });
+
+  test("opens the whole change to nits again when a full review is asked for", async () => {
+    const agent = new FakeAgent(answers());
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      changedFiles,
+      runStats.durationMs,
+      delta,
+    ).review({
+      request: "x",
+      rounds: rounds,
+      full: true,
+    });
+
+    expect(agent.runs[0]?.prompt.content[0]).toContain("<previous_rounds>");
+    expect(reviewed.findings).toHaveLength(2);
+    expect(reviewed.rereview?.since).toBeUndefined();
+  });
+
+  test("is a first review without earlier rounds", async () => {
+    const agent = new FakeAgent(answers());
+
+    const reviewed = await createReviewer(
+      agent,
+      new RecordingReporter(),
+      changedFiles,
+      runStats.durationMs,
+      delta,
+    ).review({ request: "x" });
+
+    expect(agent.runs[0]?.prompt.content[0]).not.toContain("<previous_rounds>");
+    expect(reviewed.findings).toHaveLength(2);
+    expect(reviewed.rereview).toBeUndefined();
   });
 });

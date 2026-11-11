@@ -1,7 +1,10 @@
 import type { RunStats } from "@/agent/reviewer-agent";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
 import type { ReviewResult } from "@/review/findings";
+import { appendRound } from "@/review/review-ledger";
+import type { ReviewLedger } from "@/review/review-ledger";
 import type { SavedReview } from "@/review/saved-review";
+import { ledgerMarker } from "@/reporter/github/ledger-marker";
 import { savedReviewMarker } from "@/reporter/github/saved-review-marker";
 import { reviewLayout, sectionHeading } from "@/reporter/review-layout";
 import type { ReviewLayout, ReviewSection } from "@/reporter/review-layout";
@@ -12,6 +15,8 @@ const MAX_COMMENT_CHARS = 60_000;
 // Room left under GitHub's limit for the markers `StickyComment` adds.
 const MAX_SAVED_COMMENT_CHARS = 65_000;
 const MAX_ERROR_CHARS = 2_000;
+// The ledger's share of the comment, taken out of the visible review's.
+const MAX_LEDGER_CHARS = 20_000;
 
 const TRUNCATED = "_Review truncated; see the job log for the rest._";
 const BLOCK_GAP = "\n\n";
@@ -38,6 +43,7 @@ export class ReviewCommentFormatter {
   readonly #pr: PullRequestContext;
   readonly #secrets: string[];
   readonly #warnings: string[] = [];
+  #ledger: ReviewLedger | undefined;
 
   constructor(
     pr: PullRequestContext,
@@ -59,69 +65,103 @@ export class ReviewCommentFormatter {
     this.#warnings.push(message);
   }
 
+  // Read from the comment before this run replaces it. Every status posted from
+  // here on carries it, so a failed or cancelled run doesn't lose the earlier rounds.
+  setLedger(ledger: ReviewLedger | undefined) {
+    this.#ledger = ledger;
+  }
+
   running() {
-    return this.#frame([
-      `⏳ Reviewing \`${this.#shortSha()}\`…${this.#runLink("Follow the run")}`,
-    ]);
+    return this.#withLedger(
+      this.#frame([
+        `⏳ Reviewing \`${this.#shortSha()}\`…${this.#runLink("Follow the run")}`,
+      ]),
+    );
   }
 
   failure(error: Error, { cancelled = false } = {}) {
     if (cancelled) {
-      return this.#frame([
-        `⚪ The review of \`${this.#shortSha()}\` was cancelled before it finished.${this.#runLink("See the run")}`,
-      ]);
+      return this.#withLedger(
+        this.#frame([
+          `⚪ The review of \`${this.#shortSha()}\` was cancelled before it finished.${this.#runLink("See the run")}`,
+        ]),
+      );
     }
-    return this.#frame([
-      `❌ The review of \`${this.#shortSha()}\` failed.${this.#runLink("See the run log")}`,
-      "",
-      "```",
-      this.#errorMessage(error),
-      "```",
-    ]);
+    return this.#withLedger(
+      this.#frame([
+        `❌ The review of \`${this.#shortSha()}\` failed.${this.#runLink("See the run log")}`,
+        "",
+        "```",
+        this.#errorMessage(error),
+        "```",
+      ]),
+    );
   }
 
   // Leaves out the per-finder detail, which the comment doesn't show, to keep the saved review small.
-  review({ finders: _finders, merged: _merged, ...result }: ReviewResult) {
-    return this.savedReview({
-      version: 1,
-      headSha: this.#pr.headSha,
-      descriptionAt: this.#pr.triggerTime,
-      warnings: [...this.#warnings],
-      result: result,
-    });
+  review(reviewed: ReviewResult) {
+    const { finders: _finders, merged: _merged, ...result } = reviewed;
+    return this.savedReview(
+      {
+        version: 1,
+        headSha: this.#pr.headSha,
+        descriptionAt: this.#pr.triggerTime,
+        warnings: [...this.#warnings],
+        result: result,
+      },
+      { ledger: appendRound(this.#ledger, this.#pr.headSha, reviewed) },
+    );
   }
 
-  // `recheck` is the run that re-checked only the description, shown beside the review's own stats.
-  savedReview(saved: SavedReview, { recheck }: { recheck?: RunStats } = {}) {
+  // `recheck` is the run that re-checked only the description, shown beside the review's own
+  // stats. `ledger` is kept in the comment as given, ahead of the saved review when both don't fit.
+  savedReview(
+    saved: SavedReview,
+    { recheck, ledger }: { recheck?: RunStats; ledger?: ReviewLedger } = {},
+  ) {
     const { headSha, warnings, result } = saved;
-    const footer = [
-      `Reviewed ${headSha.slice(0, 7)}`,
-      formatStats(result.stats),
-    ];
+    const reviewed = [`Reviewed ${headSha.slice(0, 7)}`];
+    const since = result.rereview?.since;
+    if (since !== undefined) {
+      reviewed.push(`focused on changes since ${since.slice(0, 7)}`);
+    }
+    const footer = [reviewed.join(", "), formatStats(result.stats)];
     if (recheck) {
       footer.push(`description re-checked in ${formatStats(recheck)}`);
     }
+    const kept = ledger && this.#ledgerMarker(ledger);
+    const ledgerChars = kept ? kept.length + 1 : 0;
     const body = this.#frame(
       [
-        this.#body(reviewLayout(result)),
+        this.#body(reviewLayout(result), MAX_COMMENT_CHARS - ledgerChars),
         "",
         "---",
         `<sub>${footer.join(" · ")}${this.#runLink("run")}</sub>`,
       ],
       warnings,
     );
+    const withLedger = [body, ...(kept ? [kept] : [])].join("\n");
     const marker = savedReviewMarker(saved, this.#secrets);
-    if (body.length + 1 + marker.length > MAX_SAVED_COMMENT_CHARS) {
-      return body;
+    if (withLedger.length + 1 + marker.length > MAX_SAVED_COMMENT_CHARS) {
+      return withLedger;
     }
-    return `${body}\n${marker}`;
+    return `${withLedger}\n${marker}`;
+  }
+
+  #ledgerMarker(ledger: ReviewLedger) {
+    return ledgerMarker(ledger, this.#secrets, MAX_LEDGER_CHARS);
+  }
+
+  #withLedger(body: string) {
+    const kept = this.#ledger && this.#ledgerMarker(this.#ledger);
+    return [body, ...(kept ? [kept] : [])].join("\n");
   }
 
   // Truncates inside a section's body, so a cut never leaves <details> open.
-  #body({ headline, sections }: ReviewLayout) {
+  #body({ headline, sections }: ReviewLayout, maxChars: number) {
     const top = `${headline.icon} **${headline.text}**`;
     const blocks = [top];
-    let room = MAX_COMMENT_CHARS - top.length;
+    let room = maxChars - top.length;
     for (const section of sections) {
       const body = this.#redact(section.body);
       const block = details(section, body);

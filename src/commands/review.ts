@@ -14,6 +14,7 @@ import { ConsoleReporter } from "@/reporter/console/console-reporter";
 import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
+import { readLedger } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import { StickyComment } from "@/reporter/github/sticky-comment";
 import type { ReviewReporter } from "@/reporter/review-reporter";
@@ -26,6 +27,9 @@ import {
 import { DescriptionRechecker } from "@/review/description-rechecker";
 import type { RecheckOutcome } from "@/review/description-rechecker";
 import { FindAndVerify } from "@/review/find-and-verify";
+import { LedgerFile } from "@/review/ledger-file";
+import { appendRound, earlierRounds } from "@/review/review-ledger";
+import type { ReviewLedger } from "@/review/review-ledger";
 import { isDescriptionFinding } from "@/review/saved-review";
 import { SavedReviewComment } from "@/reporter/github/saved-review-comment";
 
@@ -110,22 +114,10 @@ function createGitHubComment(
   };
 }
 
-function createGitHubReporter(
-  pr: PullRequestContext | undefined,
-  github: GitHubClient | undefined,
-  debug: boolean,
-) {
-  const { comment, formatter } = createGitHubComment(pr, github);
-  return new GitHubReporter(comment, formatter, process.stderr, {
-    debug: debug,
-  });
-}
+type GitHubComment = ReturnType<typeof createGitHubComment>;
 
-function createReporter(
-  name: ReporterName,
-  pr: PullRequestContext | undefined,
-  github: GitHubClient | undefined,
-  debug: boolean,
+function createLocalReporter(
+  name: Exclude<ReporterName, "github">,
 ): ReviewReporter {
   switch (name) {
     case "console":
@@ -135,9 +127,21 @@ function createReporter(
       });
     case "json":
       return new JsonReporter(process.stdout);
-    case "github":
-      return createGitHubReporter(pr, github, debug);
   }
+}
+
+// What earlier reviews of this change found: from the PR comment, where the
+// formatter then keeps it, or from the --ledger file of a local run.
+async function loadLedger(
+  githubComment: GitHubComment | undefined,
+  ledgerFile: LedgerFile | undefined,
+): Promise<ReviewLedger | undefined> {
+  if (!githubComment) {
+    return ledgerFile?.load();
+  }
+  const ledger = readLedger((await githubComment.comment.read()) ?? "");
+  githubComment.formatter.setLedger(ledger);
+  return ledger;
 }
 
 function recheckLine(outcome: RecheckOutcome) {
@@ -202,6 +206,16 @@ export default defineCommand({
       description: `Split a diff into up to this many chunks of about 400 changed lines, each reviewed twice (1 to ${MAX_CHUNKS_LIMIT}); 1 reviews it in one pass`,
       default: String(DEFAULT_MAX_CHUNKS),
     },
+    ledger: {
+      type: "string",
+      description:
+        "File that keeps what earlier reviews of this change found, so the next one doesn't repeat them. For local runs: --reporter github keeps it in the PR comment",
+    },
+    full: {
+      type: "boolean",
+      description:
+        "When the change was reviewed before, look for minor findings in all of it again, not only in what changed since",
+    },
     reporter: {
       type: "enum",
       options: [...REPORTERS],
@@ -229,15 +243,28 @@ export default defineCommand({
     const pr = await readPullRequestContext(process.env);
     const github = createGitHubClient(pr);
     // Built before the review runs so a misconfigured job fails fast.
-    const reporter = createReporter(
-      args.reporter,
-      pr,
-      github,
-      args.debug === true,
-    );
+    let githubComment: GitHubComment | undefined;
+    let reporter: ReviewReporter;
+    if (args.reporter === "github") {
+      if (args.ledger !== undefined) {
+        throw new Error(
+          "--ledger is for local runs; --reporter github keeps the ledger in the PR comment.",
+        );
+      }
+      githubComment = createGitHubComment(pr, github);
+      reporter = new GitHubReporter(
+        githubComment.comment,
+        githubComment.formatter,
+        process.stderr,
+        { debug: args.debug === true },
+      );
+    } else {
+      reporter = createLocalReporter(args.reporter);
+    }
 
+    const repository = new GitRepository(args.cwd);
     const collector = new ReviewContextCollector(
-      new GitRepository(args.cwd),
+      repository,
       createPullRequestSource(pr, github),
     );
     const promptBuilder = new ReviewPromptBuilder();
@@ -286,6 +313,18 @@ export default defineCommand({
       return;
     }
 
+    let ledgerFile: LedgerFile | undefined;
+    if (args.ledger !== undefined) {
+      ledgerFile = new LedgerFile(args.ledger);
+    }
+    // Read before the review starts: its first status update replaces the comment.
+    const ledger = await loadLedger(githubComment, ledgerFile);
+    // A round is keyed by its commit, so reviewing one again redoes its round.
+    let headSha = pr?.headSha;
+    if (headSha === undefined && ledgerFile) {
+      headSha = await repository.headSha();
+    }
+
     const reviewer = new CodeReviewer(
       collector,
       promptBuilder,
@@ -297,8 +336,14 @@ export default defineCommand({
       request: args.prompt,
       base: args.base,
       maxChunks: maxChunks,
+      rounds: headSha === undefined ? [] : earlierRounds(ledger, headSha),
+      // A description edit returned above, so an edit here is a new base, which changes the diff.
+      full: args.full === true || pr?.action === "edited",
       abortSignal: abort.signal,
     });
+    if (ledgerFile && headSha !== undefined) {
+      await ledgerFile.save(appendRound(ledger, headSha, result));
+    }
 
     // An edit made while the review ran found no saved review to re-check and skipped.
     if (

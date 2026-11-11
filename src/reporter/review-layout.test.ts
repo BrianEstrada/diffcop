@@ -329,3 +329,72 @@ describe("code", () => {
     expect(code("```")).toBe("```` ``` ````");
   });
 });
+
+describe("reviewLayout on a re-review", () => {
+  function rereviewed(leftOut: number, since?: string) {
+    return reviewLayout({
+      summary: "Traced the handler.",
+      findings: [high],
+      dropped: [],
+      explored: nothingExplored,
+      rereview: {
+        ...(since !== undefined && { since: since }),
+        settled: [
+          {
+            finding: nit,
+            reason: "Declined in round 1: the other handlers do the same.",
+          },
+        ],
+        leftOut: leftOut,
+      },
+    });
+  }
+
+  test("lists settled findings in a closed section, with what settled them", () => {
+    const { headline, sections } = rereviewed(0);
+    const settled = sections.find((s) => {
+      return s.title === "Settled in an earlier round";
+    });
+
+    expect(headline.text).toBe("1 issue found");
+    expect(sections.map(sectionHeading)).toEqual([
+      "Issues (1)",
+      "Settled in an earlier round (1)",
+      "What we looked at",
+    ]);
+    expect(settled?.open).toBe(false);
+    expect(settled?.body).toContain(
+      "Declined in round 1: the other handlers do the same.",
+    );
+  });
+
+  test("says how many minor findings were left out, and since which commit", () => {
+    expect(rereviewed(2, "abc1234def").sections.at(-1)?.body).toBe(
+      "Traced the handler.\n\nLeft out 2 minor findings on code that hasn't changed since `abc1234`, the last commit reviewed.",
+    );
+    expect(rereviewed(1, "abc1234def").sections.at(-1)?.body).toContain(
+      "Left out 1 minor finding on",
+    );
+  });
+
+  test("says nothing of left-out findings when there are none", () => {
+    expect(rereviewed(0, "abc1234def").sections.at(-1)?.body).toBe(
+      "Traced the handler.",
+    );
+  });
+
+  test("has no settled section when nothing was settled", () => {
+    const { sections } = reviewLayout({
+      summary: "",
+      findings: [],
+      dropped: [],
+      explored: nothingExplored,
+      rereview: {
+        settled: [],
+        leftOut: 0,
+      },
+    });
+
+    expect(sections.map(sectionHeading)).toEqual(["What we looked at"]);
+  });
+});

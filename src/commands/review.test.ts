@@ -85,6 +85,56 @@ describe("review", () => {
     );
   });
 
+  test("rejects --ledger with --reporter github, which keeps its own", async () => {
+    const proc = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "review",
+        "x",
+        "--ledger",
+        "ledger.json",
+        "--reporter",
+        "github",
+        "--cwd",
+        "/nonexistent",
+      ],
+      {
+        env: { PATH: process.env.PATH },
+        stderr: "pipe",
+        stdout: "pipe",
+      },
+    );
+    expect(await proc.exited).not.toBe(0);
+    expect(await new Response(proc.stderr).text()).toContain(
+      "--ledger is for local runs; --reporter github keeps the ledger in the PR comment.",
+    );
+  });
+
+  test("rejects a --ledger file that isn't a ledger before starting the review", async () => {
+    const proc = Bun.spawn(
+      [
+        "bun",
+        "src/cli.ts",
+        "review",
+        "x",
+        "--ledger",
+        "package.json",
+        "--cwd",
+        "/nonexistent",
+      ],
+      {
+        env: { PATH: process.env.PATH },
+        stderr: "pipe",
+        stdout: "pipe",
+      },
+    );
+    expect(await proc.exited).not.toBe(0);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain("package.json isn't a diffcop ledger.");
+    expect(stderr).not.toContain("Not a git repository");
+  });
+
   test("leaves --maxTurns unset by default", async () => {
     const proc = Bun.spawn(
       ["bun", "src/cli.ts", "review", "x", "--cwd", "/nonexistent"],

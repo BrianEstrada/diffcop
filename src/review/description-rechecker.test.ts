@@ -43,6 +43,18 @@ class FakeRepository implements Repository {
     return "+change";
   }
 
+  async headSha() {
+    return "abc1234";
+  }
+
+  async isAncestor() {
+    return false;
+  }
+
+  async patchSince() {
+    return "";
+  }
+
   async hashObject() {
     return "0000";
   }

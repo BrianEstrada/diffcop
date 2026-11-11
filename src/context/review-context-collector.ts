@@ -5,10 +5,22 @@ import type {
   PullRequestSource,
 } from "@/context/github/pull-request-data";
 import type { ChangedFile, Repository } from "@/context/repository";
+import { currentPath } from "@/review/diff-chunks";
+import { parseDelta } from "@/review/review-delta";
+import type { ReviewDelta } from "@/review/review-delta";
+import type { LedgerRound } from "@/review/review-ledger";
 
 export interface PullRequestDetails {
   data: PullRequestData;
   changedFilesWithSha: PullRequestFileWithSha[];
+}
+
+// Earlier reviews of the same change, oldest round first.
+export interface PreviousReview {
+  rounds: LedgerRound[];
+  // Absent when the last reviewed commit isn't in HEAD's history (a rebase or
+  // force-push), or when a full review was asked for.
+  delta?: ReviewDelta;
 }
 
 export interface ReviewContext {
@@ -20,6 +32,15 @@ export interface ReviewContext {
   changedFiles: ChangedFile[];
   diff: string;
   pullRequest?: PullRequestDetails;
+  // Only when the change was reviewed before.
+  previous?: PreviousReview;
+}
+
+export interface CollectOptions {
+  // What earlier reviews of this change found; none makes this a first review.
+  rounds?: LedgerRound[];
+  // Open the whole change to minor findings again, not only what changed since the last round.
+  full?: boolean;
 }
 
 // Local equivalent of claude-code-action's fetchGitHubData, read from git.
@@ -32,7 +53,10 @@ export class ReviewContextCollector {
     this.#pullRequest = pullRequest;
   }
 
-  async collect(baseRef?: string): Promise<ReviewContext> {
+  async collect(
+    baseRef?: string,
+    { rounds = [], full = false }: CollectOptions = {},
+  ): Promise<ReviewContext> {
     const repository = this.#repository;
     // First, so a bad --cwd fails as such rather than as a missing merge base.
     const repoRoot = await repository.root();
@@ -51,6 +75,7 @@ export class ReviewContextCollector {
       repository.diffSince(mergeBase),
     ]);
 
+    const previous = await this.#previous(rounds, full, changedFiles);
     return {
       repoRoot: repoRoot,
       branch: branch,
@@ -60,6 +85,37 @@ export class ReviewContextCollector {
       changedFiles: changedFiles,
       diff: diff,
       pullRequest: pullRequest,
+      ...(previous && { previous: previous }),
+    };
+  }
+
+  async #previous(
+    rounds: LedgerRound[],
+    full: boolean,
+    changedFiles: ChangedFile[],
+  ): Promise<PreviousReview | undefined> {
+    const since = rounds.at(-1)?.headSha;
+    if (since === undefined) {
+      return undefined;
+    }
+    const repository = this.#repository;
+    if (
+      full ||
+      changedFiles.length === 0 ||
+      !(await repository.isAncestor(since))
+    ) {
+      return { rounds: rounds };
+    }
+    // The whole tree's diff, cut down to the reviewed files once git has paired
+    // renames: a pathspec would show a file renamed since then as wholly new.
+    const paths = new Set(
+      changedFiles.map((file) => {
+        return currentPath(file.path);
+      }),
+    );
+    return {
+      rounds: rounds,
+      delta: parseDelta(since, await repository.patchSince(since), paths),
     };
   }
 

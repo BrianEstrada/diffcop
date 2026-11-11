@@ -3,6 +3,7 @@ import { SEVERITIES } from "@/review/findings";
 import type {
   DroppedFinding,
   Finding,
+  Rereview,
   ReviewResult,
   Severity,
 } from "@/review/findings";
@@ -185,10 +186,25 @@ function search({ pattern, path }: Search) {
   return `${code(pattern)} in ${code(path)}`;
 }
 
-function exploredBody(summary: string, { filesRead, searches }: Explored) {
+function leftOutNote({ leftOut, since }: Rereview) {
+  if (leftOut === 0 || since === undefined) {
+    return undefined;
+  }
+  return `Left out ${plural(leftOut, "minor finding")} on code that hasn't changed since ${code(since.slice(0, 7))}, the last commit reviewed.`;
+}
+
+function exploredBody(
+  summary: string,
+  { filesRead, searches }: Explored,
+  rereview: Rereview | undefined,
+) {
   const paragraphs: string[] = [];
   if (summary.trim()) {
     paragraphs.push(summary.trim());
+  }
+  const leftOut = rereview && leftOutNote(rereview);
+  if (leftOut) {
+    paragraphs.push(leftOut);
   }
   if (filesRead.length > 0) {
     paragraphs.push(
@@ -323,7 +339,11 @@ export function reviewLayout(
     findings,
     dropped,
     explored,
-  }: Pick<ReviewResult, "summary" | "findings" | "dropped" | "explored">,
+    rereview,
+  }: Pick<
+    ReviewResult,
+    "summary" | "findings" | "dropped" | "explored" | "rereview"
+  >,
   { html = true }: LayoutOptions = {},
 ): ReviewLayout {
   const groups = GROUP_LAYOUTS.map((layout) => {
@@ -347,9 +367,18 @@ export function reviewLayout(
       open: false,
     });
   }
+  const settled = rereview?.settled ?? [];
+  if (settled.length > 0) {
+    sections.push({
+      title: "Settled in an earlier round",
+      count: settled.length,
+      body: droppedTable(settled, html),
+      open: false,
+    });
+  }
   sections.push({
     title: "What we looked at",
-    body: exploredBody(summary, explored),
+    body: exploredBody(summary, explored, rereview),
     open: false,
   });
   return {

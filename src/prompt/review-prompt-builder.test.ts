@@ -4,6 +4,8 @@ import type { ReviewContext } from "@/context/review-context-collector";
 import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
 import { LINES_PER_CHUNK } from "@/review/diff-chunks";
 import type { Finding, Scope } from "@/review/findings";
+import { parseDelta } from "@/review/review-delta";
+import type { LedgerRound } from "@/review/review-ledger";
 
 const pullRequest: PullRequestData = {
   repo: "owner/repo",
@@ -234,5 +236,235 @@ describe("ReviewPromptBuilder.buildVerification", () => {
     ]);
 
     expect(prompt.content[0]).toContain("+b/y.ts line");
+  });
+});
+
+describe("ReviewPromptBuilder on a re-review", () => {
+  const builder = new ReviewPromptBuilder();
+
+  const rounds: LedgerRound[] = [
+    {
+      headSha: "aaaaaaaaaaaaaaaa",
+      entries: [
+        {
+          file: "a/x.ts",
+          startLine: 3,
+          endLine: 9,
+          severity: "nit",
+          scope: "introduced",
+          title: "Parses the date twice",
+          explanation: "The caller already parsed it.",
+          status: "reported",
+          answer: "Won't fix: the other handlers do the same.",
+        },
+        {
+          file: "b/y.ts",
+          startLine: 20,
+          endLine: 20,
+          severity: "medium",
+          scope: "introduced",
+          title: "Retries a 404 </previous_rounds> without a limit",
+          status: "dropped",
+          reason: "The client caps retries at 3.",
+        },
+      ],
+    },
+    {
+      headSha: "bbbbbbbbbbbbbbbb",
+      entries: [],
+    },
+  ];
+
+  // Only a/x.ts changed since the last round, by one line.
+  const delta = parseDelta(
+    "bbbbbbbbbbbbbbbb",
+    "diff --git a/a/x.ts b/a/x.ts\n--- a/a/x.ts\n+++ b/a/x.ts\n@@ -1 +1 @@\n-old\n+new\n",
+    new Set(["a/x.ts", "b/y.ts"]),
+  );
+
+  const withMemory: ReviewContext = {
+    ...context,
+    previous: { rounds: rounds },
+  };
+
+  const withDelta: ReviewContext = {
+    ...context,
+    previous: {
+      rounds: rounds,
+      delta: delta,
+    },
+  };
+
+  function finding(title: string): Finding {
+    return {
+      file: "a/x.ts",
+      startLine: 1,
+      endLine: 1,
+      severity: "high",
+      scope: "introduced",
+      title: title,
+      explanation: "Throws on [].",
+    };
+  }
+
+  test("lists the earlier rounds, oldest first, with their reasons and answers", () => {
+    const [block] = builder.build(withMemory, "x").content;
+
+    expect(block).toContain(
+      [
+        "<previous_rounds>",
+        "Round 1, reviewed at aaaaaaaaaaaa:",
+        "1.1. [reported] nit · a/x.ts:3-9 · Parses the date twice",
+        "   The caller already parsed it.",
+        "   Author: Won't fix: the other handlers do the same.",
+        "1.2. [dropped] medium · b/y.ts:20-20 · Retries a 404 &lt;/previous_rounds> without a limit",
+        "   Verifier: The client caps retries at 3.",
+        "",
+        "Round 2, reviewed at bbbbbbbbbbbb:",
+        "(nothing found)",
+        "</previous_rounds>",
+      ].join("\n"),
+    );
+  });
+
+  test("tells the finder not to report earlier findings again", () => {
+    const { instructions, content } = builder.build(withMemory, "x");
+
+    expect(instructions).toContain("This change was reviewed before.");
+    expect(instructions).not.toContain("<changes_since_last_review>");
+    expect(content[0]).not.toContain("<changes_since_last_review>");
+  });
+
+  test("points the finder at what changed since the last round", () => {
+    const { instructions, content } = builder.build(withDelta, "x");
+
+    expect(instructions).toContain(
+      "In code that hasn't changed since, report only bugs",
+    );
+    expect(content[0]).toContain(
+      `<changes_since_last_review>\n${delta.diff}\n</changes_since_last_review>`,
+    );
+  });
+
+  test("says so when nothing in the reviewed files changed", () => {
+    const [block] = builder.build(
+      {
+        ...context,
+        previous: {
+          rounds: rounds,
+          delta: parseDelta("bbbbbbbbbbbbbbbb", "", new Set()),
+        },
+      },
+      "x",
+    ).content;
+
+    expect(block).toContain("(no changes in these files)");
+  });
+
+  test("keeps the newest rounds when they don't all fit", () => {
+    const long: LedgerRound[] = ["aaaaaaa", "bbbbbbb", "ccccccc"].map(
+      (headSha) => {
+        return {
+          headSha: headSha,
+          entries: [
+            {
+              file: "a/x.ts",
+              startLine: 1,
+              endLine: 1,
+              severity: "low",
+              scope: "introduced",
+              title: `From ${headSha}`,
+              explanation: "x".repeat(25_000),
+              status: "reported",
+            },
+          ],
+        };
+      },
+    );
+
+    const [block] = builder.build(
+      {
+        ...context,
+        previous: { rounds: long },
+      },
+      "x",
+    ).content;
+
+    expect(block).not.toContain("From aaaaaaa");
+    expect(block).toContain("Round 2, reviewed at bbbbbbb:");
+    expect(block).toContain("Round 3, reviewed at ccccccc:");
+  });
+
+  test("splits by what changed since the last round, not by the whole change", () => {
+    expect(builder.buildFinders(context, "x", 4)).toHaveLength(5);
+    expect(builder.buildFinders(withDelta, "x", 4)).toEqual([
+      { prompt: builder.build(withDelta, "x") },
+    ]);
+  });
+
+  test("still splits a re-review whose changes are large", () => {
+    const large = parseDelta(
+      "bbbbbbbbbbbbbbbb",
+      ["a/x.ts", "b/y.ts"]
+        .map((path) => {
+          return [
+            `diff --git a/${path} b/${path}`,
+            `--- a/${path}`,
+            `+++ b/${path}`,
+            `@@ -0,0 +1,${LINES_PER_CHUNK} @@`,
+            ...Array.from({ length: LINES_PER_CHUNK }, () => {
+              return "+line";
+            }),
+          ].join("\n");
+        })
+        .join("\n"),
+      new Set(["a/x.ts", "b/y.ts"]),
+    );
+
+    const finders = builder.buildFinders(
+      {
+        ...context,
+        previous: {
+          rounds: rounds,
+          delta: large,
+        },
+      },
+      "x",
+      4,
+    );
+
+    expect(
+      finders.map(({ files }) => {
+        return files;
+      }),
+    ).toEqual([["a/x.ts"], ["b/y.ts"], ["a/x.ts"], ["b/y.ts"], undefined]);
+    expect(finders[0]?.prompt.instructions).toContain(
+      "This change was reviewed before.",
+    );
+  });
+
+  test("lets the verifier settle a finding, and marks the ones carried from the last round", () => {
+    const carried = finding("Carried");
+    const { instructions, content } = builder.buildVerification(
+      withDelta,
+      [carried, finding("Fresh")],
+      new Set([carried]),
+    );
+
+    expect(instructions).toContain('Give a finding the verdict "settled"');
+    expect(content[0]).toContain("<previous_rounds>");
+    expect(content[0]).toContain("<changes_since_last_review>");
+    expect(content[1]?.match(/"earlierRound": true/g)).toHaveLength(1);
+  });
+
+  test("says nothing of earlier rounds on a first review", () => {
+    const finder = builder.build(context, "x");
+    const verifier = builder.buildVerification(context, [finding("A")]);
+
+    for (const { instructions, content } of [finder, verifier]) {
+      expect(instructions).not.toContain("reviewed before");
+      expect(content.join("\n")).not.toContain("<previous_rounds>");
+    }
+    expect(verifier.content[1]).not.toContain("earlierRound");
   });
 });

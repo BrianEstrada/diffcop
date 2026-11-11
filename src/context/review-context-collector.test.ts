@@ -5,16 +5,20 @@ import type {
 } from "@/context/github/pull-request-data";
 import type { ChangedFile, Repository } from "@/context/repository";
 import { ReviewContextCollector } from "@/context/review-context-collector";
+import type { LedgerRound } from "@/review/review-ledger";
 
 class FakeRepository implements Repository {
   async root() {
     return "/repo";
   }
   readonly mergeBaseCalls: string[] = [];
+  readonly deltaCalls: string[] = [];
   readonly #knownRefs: string[];
+  readonly #ancestors: string[];
 
-  constructor(knownRefs: string[]) {
+  constructor(knownRefs: string[], ancestors: string[] = []) {
     this.#knownRefs = knownRefs;
+    this.#ancestors = ancestors;
   }
 
   async defaultBase() {
@@ -49,6 +53,31 @@ class FakeRepository implements Repository {
 
   async diffSince(ref: string) {
     return `diff against ${ref}`;
+  }
+
+  async headSha() {
+    return "abc1234";
+  }
+
+  async isAncestor(sha: string) {
+    return this.#ancestors.includes(sha);
+  }
+
+  async patchSince(ref: string) {
+    this.deltaCalls.push(ref);
+    return ["a.ts", "merged-from-main.ts"]
+      .map((path) => {
+        return [
+          `diff --git a/${path} b/${path}`,
+          `--- a/${path}`,
+          `+++ b/${path}`,
+          "@@ -4,2 +4,3 @@",
+          " kept",
+          "+added",
+          " kept",
+        ].join("\n");
+      })
+      .join("\n");
   }
 
   async hashObject(path: string) {
@@ -218,5 +247,68 @@ describe("ReviewContextCollector", () => {
       }),
     ).collect();
     expect(context.pullRequest?.changedFilesWithSha).toEqual([]);
+  });
+});
+
+describe("ReviewContextCollector on a re-review", () => {
+  const rounds: LedgerRound[] = [
+    {
+      headSha: "aaaaaaa",
+      entries: [],
+    },
+    {
+      headSha: "bbbbbbb",
+      entries: [],
+    },
+  ];
+
+  test("has no earlier review without rounds", async () => {
+    const repository = new FakeRepository(["origin/main"], ["bbbbbbb"]);
+    const context = await new ReviewContextCollector(repository).collect();
+
+    expect(context.previous).toBeUndefined();
+    expect(repository.deltaCalls).toEqual([]);
+  });
+
+  test("reads what changed in the reviewed files since the last round", async () => {
+    const repository = new FakeRepository(["origin/main"], ["bbbbbbb"]);
+    const { previous } = await new ReviewContextCollector(repository).collect(
+      undefined,
+      { rounds: rounds },
+    );
+
+    expect(repository.deltaCalls).toEqual(["bbbbbbb"]);
+    expect(previous?.rounds).toBe(rounds);
+    expect(previous?.delta?.since).toBe("bbbbbbb");
+    expect([...(previous?.delta?.files.keys() ?? [])]).toEqual(["a.ts"]);
+    expect(previous?.delta?.diff).not.toContain("merged-from-main.ts");
+    expect([...(previous?.delta?.files.get("a.ts")?.touched ?? [])]).toEqual([
+      5,
+    ]);
+  });
+
+  test("keeps the rounds but no delta when the last reviewed commit isn't in the history", async () => {
+    const repository = new FakeRepository(["origin/main"], ["aaaaaaa"]);
+    const { previous } = await new ReviewContextCollector(repository).collect(
+      undefined,
+      { rounds: rounds },
+    );
+
+    expect(previous).toEqual({ rounds: rounds });
+    expect(repository.deltaCalls).toEqual([]);
+  });
+
+  test("keeps the rounds but no delta when a full review is asked for", async () => {
+    const repository = new FakeRepository(["origin/main"], ["bbbbbbb"]);
+    const { previous } = await new ReviewContextCollector(repository).collect(
+      undefined,
+      {
+        rounds: rounds,
+        full: true,
+      },
+    );
+
+    expect(previous).toEqual({ rounds: rounds });
+    expect(repository.deltaCalls).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { staleBaseWarning } from "@/review/change-size-limit";
 import type { ChangeSizeLimit } from "@/review/change-size-limit";
 import { FindAndVerify } from "@/review/find-and-verify";
 import type { ReviewResult } from "@/review/findings";
+import type { LedgerRound } from "@/review/review-ledger";
 
 export interface ReviewRequest {
   request: string;
@@ -14,6 +15,10 @@ export interface ReviewRequest {
   // Chunks of the diff, each with finders of its own; past this many, chunks grow.
   // 1 keeps one finder over the whole diff.
   maxChunks?: number;
+  // What earlier reviews of this change found, oldest round first.
+  rounds?: LedgerRound[];
+  // Open the whole change to minor findings again, not only what changed since the last round.
+  full?: boolean;
   abortSignal?: AbortSignal;
 }
 
@@ -55,11 +60,16 @@ export class CodeReviewer {
     request,
     base,
     maxChunks = DEFAULT_MAX_CHUNKS,
+    rounds,
+    full,
     abortSignal,
   }: ReviewRequest): Promise<ReviewResult> {
     await this.#reporter.started();
     try {
-      const context = await this.#collector.collect(base);
+      const context = await this.#collector.collect(base, {
+        rounds: rounds,
+        full: full,
+      });
       const sizeWarning =
         staleBaseWarning(
           context.base,

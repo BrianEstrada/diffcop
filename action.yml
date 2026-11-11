@@ -30,6 +30,10 @@ inputs:
     description: Split a diff into up to this many chunks of about 400 changed lines, each reviewed twice. 1 to 4; 1 reviews it in one pass.
     required: false
     default: "1"
+  full:
+    description: When the PR was reviewed before, look for minor findings in all of it again, not only in what changed since.
+    required: false
+    default: "false"
   debug:
     description: Also log the reviewer's tool calls and thinking time.
     required: false
@@ -66,6 +70,7 @@ runs:
         PROMPT: ${{ inputs.prompt }}
         EFFORT: ${{ inputs.effort }}
         MAX_CHUNKS: ${{ inputs.max-chunks }}
+        FULL: ${{ inputs.full }}
         DEBUG: ${{ inputs.debug }}
       run: |
         # Unset secrets that aren't configured; Actions passes them as empty strings.
@@ -82,6 +87,9 @@ runs:
         fi
         if [ -n "$MAX_CHUNKS" ]; then
           args+=(--maxChunks "$MAX_CHUNKS")
+        fi
+        if [ "$FULL" = "true" ]; then
+          args+=(--full)
         fi
         if [ "$DEBUG" = "true" ]; then
           args+=(--debug)
