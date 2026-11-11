@@ -109,8 +109,8 @@ export class ReviewCommentFormatter {
         descriptionAt: this.#pr.triggerTime,
         warnings: [...this.#warnings],
         result: result,
-        ...(finders && { finders: summarizeFinders(finders) }),
-        ...(merged && { merged: merged.length }),
+        finders: summarizeFinders(finders ?? []),
+        merged: merged?.length ?? 0,
       },
       { ledger: appendRound(this.#ledger, this.#pr.headSha, reviewed) },
     );
@@ -133,25 +133,24 @@ export class ReviewCommentFormatter {
     if (run) {
       footer.push(run);
     }
-    const { headline, sections } = reviewLayout(result);
-    const layout = {
-      headline: headline,
-      sections: [
-        ...sections,
-        runDetailsSection({
-          stats: result.stats,
-          recheck: recheck,
-          finders: saved.finders,
-          merged: saved.merged,
-          since: since,
-        }),
-      ],
-    };
+    const runDetails = runDetailsSection({
+      stats: result.stats,
+      recheck: recheck,
+      finders: saved.finders,
+      merged: saved.merged,
+      since: since,
+    });
+    // Set aside before the review's own sections, so a long review can't truncate the run's numbers away.
+    const runBlock = details(runDetails, this.#redact(runDetails.body));
     const kept = ledger && this.#ledgerMarker(ledger);
     const ledgerChars = kept ? kept.length + 1 : 0;
+    const room =
+      MAX_COMMENT_CHARS - ledgerChars - BLOCK_GAP.length - runBlock.length;
     const body = this.#frame(
       [
-        this.#body(layout, MAX_COMMENT_CHARS - ledgerChars),
+        this.#body(reviewLayout(result), room),
+        "",
+        runBlock,
         "",
         "---",
         `<sub>${footer.join(" · ")}</sub>`,

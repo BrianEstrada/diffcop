@@ -15,7 +15,7 @@ export interface RunDetails {
   stats: RunStats;
   // The run that re-checked only the description, after the review.
   recheck?: RunStats;
-  // Only when parallel finders ran.
+  // The parallel finders' runs, none when one finder reviewed the diff. Absent when unknown.
   finders?: FinderSummary[];
   merged?: number;
   // The last reviewed commit, when the split followed what changed since it.
@@ -77,10 +77,8 @@ function finderName({ chunk }: FinderSummary, pass: number) {
   return `Chunk ${chunk}, pass ${pass + 1}`;
 }
 
-// The first line only, since an install failure's output runs to many, and nothing that ends the cell.
 function errorCell(error = "") {
-  const [firstLine = ""] = error.trim().split(/\r?\n/);
-  return firstLine.replaceAll("|", "\\|");
+  return error.replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ");
 }
 
 // A failed finder has no stats; its error stands in for them.
@@ -169,7 +167,7 @@ export function runDetailsSection(details: RunDetails): ReviewSection {
   const blocks = [runsTable(details)];
   if (finders && finders.length > 0) {
     blocks.push(splitSummary(details), findersTable(finders));
-  } else {
+  } else if (finders) {
     blocks.push("One finder reviewed the whole diff.");
   }
   return {

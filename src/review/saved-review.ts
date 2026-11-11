@@ -61,11 +61,20 @@ const finderSummarySchema = z.object({
 
 export type FinderSummary = z.infer<typeof finderSummarySchema>;
 
+const MAX_FINDER_ERROR_CHARS = 200;
+
+// An install failure's message runs to many lines, which would crowd out the saved review itself.
+function shortError(error: string) {
+  const [firstLine = ""] = error.trim().split(/\r?\n/);
+  return firstLine.slice(0, MAX_FINDER_ERROR_CHARS);
+}
+
 export function summarizeFinders(finders: FinderRun[]): FinderSummary[] {
-  return finders.map(({ files, ...finder }) => {
+  return finders.map(({ files, error, ...finder }) => {
     return {
       ...finder,
       ...(files && { files: files.length }),
+      ...(error !== undefined && { error: shortError(error) }),
     };
   });
 }
@@ -78,7 +87,8 @@ export const savedReviewSchema = z.object({
   descriptionAt: z.string().optional(),
   warnings: z.array(z.string()),
   result: reviewResultSchema,
-  // Only when parallel finders ran: their runs, and how many duplicate findings were merged.
+  // The parallel finders' runs, none when one finder reviewed the diff, and how many duplicate
+  // findings were merged. Absent from a review saved before these were kept.
   finders: z.array(finderSummarySchema).optional(),
   merged: z.number().optional(),
 });

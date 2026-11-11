@@ -258,10 +258,41 @@ describe("ReviewCommentFormatter.review", () => {
     expect(body).toContain(
       "_Review truncated; see the job log for the rest._\n\n</details>",
     );
-    expect(body.match(/<details/g)).toHaveLength(1);
-    expect(body.match(/<\/details>/g)).toHaveLength(1);
+    expect(body.match(/<details/g)).toHaveLength(2);
+    expect(body.match(/<\/details>/g)).toHaveLength(2);
     expect(withoutLedger(body)).toEndWith("</sub>");
     expect(readSavedReview(body)).toBeUndefined();
+  });
+
+  test("keeps the run details whole when the review before them is truncated", () => {
+    const body = new ReviewCommentFormatter(pr).review({
+      ...review(
+        [finding("high", "x".repeat(70_000))],
+        [
+          {
+            finding: finding("low", "Minor."),
+            reason: "Guarded by the caller.",
+          },
+        ],
+      ),
+      finders: [
+        {
+          files: ["a.ts"],
+          chunk: 1,
+          lines: 400,
+          findings: 1,
+          stats: stats,
+        },
+      ],
+      merged: [],
+    });
+
+    expect(body.length).toBeLessThan(65_536);
+    expect(body).toContain("_Review truncated;");
+    expect(body).not.toContain("Dropped by verification");
+    expect(body).toContain(
+      "| Chunk 1 | 1 | 400 | 1 | 5s | 1 | – |\n\n</details>\n\n---\n<sub>Reviewed abc1234",
+    );
   });
 });
 
@@ -282,11 +313,13 @@ describe("ReviewCommentFormatter saved review", () => {
       descriptionAt: "2026-10-02T10:00:00Z",
       warnings: ["Large change."],
       result: result,
+      finders: [],
+      merged: 0,
     };
     expect(readSavedReview(formatter.review(result))).toEqual(expected);
   });
 
-  test("saves each finder's numbers, without its file paths, and how many findings were merged", () => {
+  test("saves each finder's numbers, without its file paths or more than a line of its error", () => {
     const result = review([finding("low", "Claims a cache.", "description")]);
 
     const body = new ReviewCommentFormatter(triggered).review({
@@ -301,7 +334,11 @@ describe("ReviewCommentFormatter saved review", () => {
         },
         {
           findings: 0,
-          error: "never submitted",
+          error: `never submitted\n${"install output ".repeat(500)}`,
+        },
+        {
+          findings: 0,
+          error: "e".repeat(5_000),
         },
       ],
       merged: [
@@ -328,6 +365,10 @@ describe("ReviewCommentFormatter saved review", () => {
       {
         findings: 0,
         error: "never submitted",
+      },
+      {
+        findings: 0,
+        error: "e".repeat(200),
       },
     ]);
     expect(readSavedReview(body)?.merged).toBe(1);

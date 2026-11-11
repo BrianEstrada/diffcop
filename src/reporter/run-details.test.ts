@@ -42,19 +42,36 @@ const finders = [finder(1), finder(2), finder(1), finder(2), finder(undefined)];
 
 describe("runDetailsSection", () => {
   test("is a closed section", () => {
-    const section = runDetailsSection({ stats: stats });
+    const section = runDetailsSection({
+      stats: stats,
+      finders: [],
+    });
 
     expect(section.title).toBe("Run details");
     expect(section.open).toBe(false);
   });
 
   test("lists the review's numbers in one row, and says one finder reviewed the diff", () => {
-    expect(runDetailsSection({ stats: stats }).body).toBe(
+    expect(
+      runDetailsSection({
+        stats: stats,
+        finders: [],
+      }).body,
+    ).toBe(
       [
         RUNS_HEADER,
         "| Review | 2m 45s | 39 | 3.1M | 95% | 13.9K | ~$1.78 |",
         "",
         "One finder reviewed the whole diff.",
+      ].join("\n"),
+    );
+  });
+
+  test("says nothing about the split when it isn't known, as for a review saved before it was kept", () => {
+    expect(runDetailsSection({ stats: stats }).body).toBe(
+      [
+        RUNS_HEADER,
+        "| Review | 2m 45s | 39 | 3.1M | 95% | 13.9K | ~$1.78 |",
       ].join("\n"),
     );
   });
@@ -136,7 +153,7 @@ describe("runDetailsSection", () => {
     ).toContain("3 duplicate findings were merged before verification.");
   });
 
-  test("adds a column for the error's first line only when a finder failed", () => {
+  test("adds a column for the error only when a finder failed", () => {
     const { body } = runDetailsSection({
       stats: stats,
       finders: [
@@ -144,7 +161,7 @@ describe("runDetailsSection", () => {
         finder(1, {
           findings: 0,
           stats: undefined,
-          error: "never submitted | exit 1\n  at bootstrap",
+          error: "never submitted | exit 1",
         }),
         finder(undefined),
       ],
