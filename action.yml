@@ -27,9 +27,9 @@ inputs:
     required: false
     default: high
   max-chunks:
-    description: Split a diff into up to this many chunks of about 400 changed lines, each reviewed twice. 1 to 4; 1 reviews it in one pass.
+    description: Split a PR's first review into up to this many chunks of about 400 changed lines, each reviewed twice. 1 to 4; 1 always reviews in one pass.
     required: false
-    default: "1"
+    default: "4"
   full:
     description: When the PR was reviewed before, look for minor findings in all of it again, not only in what changed since.
     required: false

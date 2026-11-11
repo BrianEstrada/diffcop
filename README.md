@@ -115,7 +115,7 @@ jobs:
 | `github-token`            | `github.token`                                                       | Reads the PR and posts the comment.                   |
 | `prompt`                  | Review this pull request for bugs, security issues, and regressions. | What to ask the reviewer.                             |
 | `effort`                  | `high`                                                               | `low` to `max`. Empty uses Claude Code's default.     |
-| `max-chunks`              | `1`                                                                  | `1` to `4`. Above 1, a large diff is split up.        |
+| `max-chunks`              | `4`                                                                  | `1` to `4`. Above 1, a large first review is split.   |
 | `full`                    | `false`                                                              | On a re-review, open all of it to minor findings.     |
 | `debug`                   | `false`                                                              | Also log the reviewer's tool calls and thinking time. |
 
@@ -133,12 +133,14 @@ The first pass looks for bugs the diff introduced, plus a few nits, and on a PR 
 description matches the code. A fresh session then tries to disprove each finding, and only what
 survives is reported.
 
-By default one finder reviews the whole diff. With `--maxChunks` set from 2 to 4 (`max-chunks` in
-the action), a diff over 400 changed lines is split by path into that many chunks at most, of about
-400 lines each, tests kept with their source; past that, chunks grow. Each chunk gets two finders
-of its own, and one more finder reviews the whole diff for bugs that span chunks. Their findings
-are merged before they're checked. This costs several times as much as one pass. If one finder or
-the merge step fails, the review goes on without it and says so in a warning.
+One finder reviews a small diff. A diff over 400 changed lines is split by path into chunks of
+about 400 lines each, tests kept with their source, up to `max-chunks` of them: 4 in the action,
+and 1 on the command line, where `--maxChunks` raises it. Past that many, chunks grow. Each chunk
+gets two finders of its own, and one more finder reviews the whole diff for bugs that span chunks.
+Their findings are merged before they're checked. This costs several times as much as one pass,
+so only a PR's first review is split this way; [later ones](#reviewing-a-change-again) follow
+what changed. If one finder or the merge step fails, the review goes on without it and says so in
+a warning.
 
 The review opens with one headline:
 
@@ -178,12 +180,17 @@ When a change was reviewed before:
   bears out the author's reason.
 - Low findings and nits are reported only on lines that changed since the last reviewed commit.
   The footer names that commit.
-- With `--maxChunks` above 1, the split follows what changed since the last round, so a small fix
-  gets one finder.
+- The split into chunks follows what changed since the last round, so a small fix gets one
+  finder.
 
-`--full` (`full` in the action) opens the whole change to low findings and nits again for one
-run. diffcop does the same on its own when the last reviewed commit is no longer in the branch's
-history, as after a rebase or force-push, and when the PR's base changes.
+`--full` (`full` in the action) reviews the whole change as on a first review for one run:
+split into chunks, and open to low findings and nits everywhere. diffcop does the same on its
+own when the PR's base changes.
+
+When the last reviewed commit is no longer in the branch's history, as after a rebase or
+force-push, there is nothing to compare against. Low findings and nits are open everywhere
+again, but one finder reviews the change, so a branch rebased on every push doesn't pay for a
+split review each time.
 
 ## Contributing
 

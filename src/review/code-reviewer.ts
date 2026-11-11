@@ -22,7 +22,7 @@ export interface ReviewRequest {
   abortSignal?: AbortSignal;
 }
 
-// Chunked review is opt-in: it multiplies a review's sessions and cost.
+// Opt-in on the command line, since it multiplies a review's sessions and cost; the action asks for 4.
 export const DEFAULT_MAX_CHUNKS = 1;
 
 // Each chunk adds two parallel finder sessions.

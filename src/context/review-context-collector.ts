@@ -21,6 +21,8 @@ export interface PreviousReview {
   // Absent when the last reviewed commit isn't in HEAD's history (a rebase or
   // force-push), or when a full review was asked for.
   delta?: ReviewDelta;
+  // A full review was asked for, so the whole change is gone over as on a first review.
+  full?: boolean;
 }
 
 export interface ReviewContext {
@@ -98,12 +100,14 @@ export class ReviewContextCollector {
     if (since === undefined) {
       return undefined;
     }
+    if (full) {
+      return {
+        rounds: rounds,
+        full: true,
+      };
+    }
     const repository = this.#repository;
-    if (
-      full ||
-      changedFiles.length === 0 ||
-      !(await repository.isAncestor(since))
-    ) {
+    if (changedFiles.length === 0 || !(await repository.isAncestor(since))) {
       return { rounds: rounds };
     }
     // The whole tree's diff, cut down to the reviewed files once git has paired

@@ -231,11 +231,15 @@ function previousRounds(rounds: LedgerRound[]) {
   return kept.join("\n\n");
 }
 
-// On a re-review, the split follows what changed since the last round rather than the whole change.
+// A first or full review splits the whole change; a re-review, what changed since the last round.
+// After a rebase there's no such change to split, and a split review on every push would cost too much.
 function filesToSplit({ changedFiles, previous }: ReviewContext) {
-  const delta = previous?.delta;
-  if (!delta) {
+  if (!previous || previous.full) {
     return changedFiles;
+  }
+  const { delta } = previous;
+  if (!delta) {
+    return [];
   }
   return changedFiles.flatMap((file) => {
     const changed = delta.files.get(currentPath(file.path));

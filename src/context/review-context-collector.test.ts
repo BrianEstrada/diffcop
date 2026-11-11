@@ -298,7 +298,7 @@ describe("ReviewContextCollector on a re-review", () => {
     expect(repository.deltaCalls).toEqual([]);
   });
 
-  test("keeps the rounds but no delta when a full review is asked for", async () => {
+  test("marks a full review, with the rounds but no delta, when one is asked for", async () => {
     const repository = new FakeRepository(["origin/main"], ["bbbbbbb"]);
     const { previous } = await new ReviewContextCollector(repository).collect(
       undefined,
@@ -308,7 +308,10 @@ describe("ReviewContextCollector on a re-review", () => {
       },
     );
 
-    expect(previous).toEqual({ rounds: rounds });
+    expect(previous).toEqual({
+      rounds: rounds,
+      full: true,
+    });
     expect(repository.deltaCalls).toEqual([]);
   });
 });
