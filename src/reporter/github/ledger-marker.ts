@@ -1,7 +1,14 @@
-import { fitLedger, reviewLedgerSchema } from "@/review/review-ledger";
+import {
+  addRound,
+  appendRound,
+  fitLedger,
+  reviewLedgerSchema,
+} from "@/review/review-ledger";
 import type { ReviewLedger } from "@/review/review-ledger";
+import { readSavedReview } from "@/reporter/github/saved-review-marker";
 
-// Gzipped, then base64: a ledger of several rounds would otherwise outgrow the comment.
+// A comment keeps its round in its saved review. This marker holds the round instead when the saved
+// review is too long to keep, and every round so far in a comment from when diffcop kept only one.
 const LEDGER = /<!-- diffcop:ledger=([A-Za-z0-9+/=]+) -->/g;
 
 // Secrets are matched as JSON escapes them, so one with a quote or backslash is still caught.
@@ -29,7 +36,32 @@ export function ledgerMarker(
   return encode(fitted, secrets);
 }
 
-// Undefined for a comment without one, such as a PR's first review or a comment from before ledgers.
+// What diffcop's comments on a PR remember, given oldest first: each one's round, and a later
+// comment's round of a commit in place of an earlier one's.
+export function ledgerFromComments(bodies: string[]) {
+  let ledger: ReviewLedger | undefined;
+  for (const body of bodies) {
+    const kept = readLedger(body);
+    const saved = readSavedReview(body);
+    for (const round of kept?.rounds ?? []) {
+      ledger = addRound(ledger, round);
+    }
+    if (!kept && saved) {
+      // Checked like a stored ledger: a round's commit is passed to git, so it has to be a SHA.
+      ledger =
+        reviewLedgerSchema.safeParse(
+          appendRound(ledger, saved.headSha, saved.result),
+        ).data ?? ledger;
+    }
+  }
+  return ledger;
+}
+
+export function holdsReview(body: string) {
+  return readLedger(body) !== undefined || readSavedReview(body) !== undefined;
+}
+
+// Undefined for a comment without one.
 export function readLedger(body: string): ReviewLedger | undefined {
   // The last one: the marker follows the visible review, where a finding's text can quote one.
   const encoded = [...body.matchAll(LEDGER)].at(-1)?.[1];

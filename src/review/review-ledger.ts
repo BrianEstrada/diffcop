@@ -91,15 +91,20 @@ export function appendRound(
       return entry(finding, "settled", reason);
     }),
   ];
+  return addRound(ledger, {
+    headSha: headSha,
+    entries: entries,
+  });
+}
+
+// Last in the ledger, in place of any round the commit already had.
+export function addRound(
+  ledger: ReviewLedger | undefined,
+  round: LedgerRound,
+): ReviewLedger {
   return {
     version: 1,
-    rounds: [
-      ...earlierRounds(ledger, headSha),
-      {
-        headSha: headSha,
-        entries: entries,
-      },
-    ],
+    rounds: [...earlierRounds(ledger, round.headSha), round],
   };
 }
 

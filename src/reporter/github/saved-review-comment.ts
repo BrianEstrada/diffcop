@@ -44,10 +44,10 @@ export class SavedReviewComment implements SavedReviewStore {
         return undefined;
       }
       rewritten = updated;
-      // A re-check changes only description findings, which the ledger doesn't hold.
+      // Only a comment from when diffcop kept one has a ledger next to its saved review.
       return this.#formatter.savedReview(updated, {
         recheck: recheck,
-        ledger: readLedger(body),
+        earlier: readLedger(body),
       });
     });
     // A description finding can be what turned the status red, so it follows the comment.

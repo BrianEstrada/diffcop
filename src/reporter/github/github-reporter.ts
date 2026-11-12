@@ -10,6 +10,7 @@ import {
 import type { CommitStatus } from "@/reporter/github/commit-status";
 import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import type { ReviewComments } from "@/reporter/github/review-comments";
+import { holdsReview } from "@/reporter/github/ledger-marker";
 
 export interface GitHubReporterOptions {
   // Also log tool calls and thinking time, to see where a slow run went.
@@ -83,15 +84,16 @@ export class GitHubReporter implements ReviewReporter {
       }
       return;
     }
-    if (await this.#postOrWarn(this.#formatter.failure(error))) {
+    if (await this.#postFailure(this.#formatter.failure(error))) {
       await this.#status.post(failureStatus(false));
     }
   }
 
-  // False only when a newer run owns the comment, and then the commit's status is that run's too.
-  async #postOrWarn(body: string) {
+  // Posted after this commit's review when it has one, not over it: later rounds read that
+  // review back. False only when a newer run owns the comment, and then the status is its too.
+  async #postFailure(body: string) {
     try {
-      return await this.#post(body);
+      return await this.#post(body, holdsReview);
     } catch (cause) {
       this.#warn(toError(cause));
       return true;
@@ -109,8 +111,11 @@ export class GitHubReporter implements ReviewReporter {
 
   // Each commit's review is a comment of its own, and a re-run of an older
   // workflow run can't replace or follow a newer run's.
-  async #post(body: string) {
-    const posted = await this.#comment.upsert(body, { onlyIfOwned: true });
+  async #post(body: string, keep?: (existing: string) => boolean) {
+    const posted = await this.#comment.upsert(body, {
+      onlyIfOwned: true,
+      keep: keep,
+    });
     const where = this.#comment.location;
     if (posted) {
       this.#log.write(`Wrote the diffcop comment on ${where}\n`);

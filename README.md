@@ -162,7 +162,7 @@ Each reviewed commit gets a comment of its own, posted when its review is done, 
 notification carries the result. Earlier diffcop comments are then hidden as outdated: a PR shows
 one review, and the earlier rounds stay a click away. Reviewing a commit again edits its comment
 instead of posting another. Nothing is posted while a review runs, or when one is cancelled; the
-status covers both. A review that fails posts the error.
+status covers both. A review that fails posts the error, after that commit's review if it has one.
 
 Below it, collapsible sections list the findings, bugs that predate the diff, what verification
 dropped and why, what an earlier round settled, and the files the reviewer read. The last one,
@@ -180,10 +180,11 @@ finishes. A retargeted base, or a push, still reviews the code.
 
 ### Reviewing a change again
 
-diffcop remembers what it found. On a PR it keeps a ledger of every round, hidden in its newest
-comment.
-For a local run, pass `--ledger <file>` and it keeps the ledger there. A round belongs to a commit,
-so reviewing the same commit twice redoes its round.
+diffcop remembers what it found. On a PR each of its comments keeps that round's findings, hidden
+after the review, and the next run reads them back from every comment; hiding a comment doesn't
+change that, deleting one forgets its round. For a local run, pass `--ledger <file>` and it keeps
+every round there. A round belongs to a commit, so reviewing the same commit twice redoes its
+round.
 
 When a change was reviewed before:
 

@@ -683,6 +683,70 @@ describe("ReviewComments, one comment per commit", () => {
   });
 });
 
+describe("ReviewComments, kept comments", () => {
+  function isReview(body: string) {
+    return body.includes("✅");
+  }
+
+  test("posts after a comment of this commit that is to be kept, not over it", async () => {
+    const { calls, fetch } = fakeGitHub([
+      [
+        {
+          id: 500,
+          body: `${diffcopComment("41")}\n✅ All good`,
+        },
+      ],
+    ]);
+    await comments(run, fetch).upsert("❌ failed", { keep: isReview });
+    expect(calls.at(-1)?.method).toBe("POST");
+  });
+
+  test("still edits a comment of this commit that isn't kept", async () => {
+    const { calls, fetch } = fakeGitHub([
+      [
+        {
+          id: 500,
+          body: `${diffcopComment("41")}\n❌ failed`,
+        },
+      ],
+    ]);
+    await comments(run, fetch).upsert("❌ failed again", { keep: isReview });
+    expect(calls.at(-1)?.method).toBe("PATCH");
+  });
+
+  test("reads every diffcop comment, oldest first", async () => {
+    const { fetch } = fakeGitHub([
+      [
+        {
+          id: 500,
+          body: `${diffcopComment("40", "0000000aaa")}\nfirst`,
+        },
+        {
+          id: 501,
+          body: "unrelated",
+        },
+        {
+          id: 502,
+          body: `${diffcopComment("41")}\nby someone else`,
+          user: { login: "someone" },
+        },
+      ],
+      [
+        {
+          id: 503,
+          body: `${diffcopComment("41")}\nsecond`,
+        },
+      ],
+    ]);
+    const bodies = await comments(run, fetch).readAll();
+    expect(
+      bodies.map((body) => {
+        return body.split("\n").at(-1);
+      }),
+    ).toEqual(["first", "second"]);
+  });
+});
+
 describe("ReviewComments.hideOutdated", () => {
   test("hides every earlier comment that still shows, and not the newest", async () => {
     const { hidden, fetch } = fakeGitHub([

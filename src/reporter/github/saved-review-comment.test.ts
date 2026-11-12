@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
-import { readLedger } from "@/reporter/github/ledger-marker";
+import {
+  ledgerFromComments,
+  ledgerMarker,
+} from "@/reporter/github/ledger-marker";
+import type { ReviewLedger } from "@/review/review-ledger";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import { SavedReviewComment } from "@/reporter/github/saved-review-comment";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
@@ -44,6 +48,30 @@ const reviewed = formatter.review({
 });
 
 const COMMENT_URL = "https://github.test/owner/repo/pull/7#issuecomment-500";
+
+const withCodeFinding = formatter.review({
+  summary: "",
+  findings: [
+    {
+      file: "a.ts",
+      startLine: 1,
+      endLine: 1,
+      severity: "high",
+      scope: "introduced",
+      title: "Drops the last page",
+      explanation: "Off by one.",
+    },
+  ],
+  dropped: [],
+  explored: {
+    filesRead: [],
+    searches: [],
+  },
+  stats: {
+    durationMs: 60_000,
+    toolCalls: 20,
+  },
+});
 
 class FakeStatus {
   updates: StatusUpdate[] = [];
@@ -156,9 +184,9 @@ describe("SavedReviewComment", () => {
     ]);
   });
 
-  test("keeps the comment's ledger when it rewrites the review", async () => {
-    const comment = new FakeComment(reviewed);
-    const ledger = readLedger(reviewed);
+  test("the rewritten comment still remembers its round", async () => {
+    const comment = new FakeComment(withCodeFinding);
+    const round = ledgerFromComments([withCodeFinding]);
 
     await new SavedReviewComment(comment, formatter, new FakeStatus()).save(
       (current) => {
@@ -170,8 +198,51 @@ describe("SavedReviewComment", () => {
       },
     );
 
-    expect(ledger?.rounds).toHaveLength(1);
-    expect(readLedger(comment.body ?? "")).toEqual(ledger);
+    expect(round?.rounds[0]?.entries).toHaveLength(1);
+    expect(ledgerFromComments([comment.body ?? ""])).toEqual(round);
+  });
+
+  test("keeps the earlier rounds of a comment from when diffcop kept one", async () => {
+    const earlier: ReviewLedger = {
+      version: 1,
+      rounds: [
+        {
+          headSha: "1111111",
+          entries: [
+            {
+              file: "a.ts",
+              startLine: 1,
+              endLine: 1,
+              severity: "nit",
+              scope: "introduced",
+              title: "Rename it",
+              status: "dropped",
+              reason: "The sibling file uses the same name.",
+            },
+          ],
+        },
+        {
+          headSha: pr.headSha,
+          entries: [],
+        },
+      ],
+    };
+    const comment = new FakeComment(
+      `${reviewed}\n${ledgerMarker(earlier, [], 10_000)}`,
+    );
+
+    await new SavedReviewComment(comment, formatter, new FakeStatus()).save(
+      (current) => {
+        return current;
+      },
+      {
+        durationMs: 5_000,
+        toolCalls: 2,
+      },
+    );
+
+    expect(ledgerFromComments([comment.body ?? ""])).toEqual(earlier);
+    expect(readSavedReview(comment.body ?? "")).toBeDefined();
   });
 
   test("leaves a comment alone once a newer review has failed", async () => {
