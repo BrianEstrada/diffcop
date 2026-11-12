@@ -54,6 +54,9 @@ runs:
     - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
       with:
         version: 12
+        # A file that doesn't exist: the default is the reviewed repo's package.json, and the
+        # step fails when that names another pnpm version in `packageManager`.
+        package_json_file: .diffcop/no-package.json
 
     - shell: bash
       working-directory: ${{ github.action_path }}
