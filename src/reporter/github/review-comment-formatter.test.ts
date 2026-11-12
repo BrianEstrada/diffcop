@@ -423,10 +423,10 @@ describe("ReviewCommentFormatter saved review", () => {
   });
 });
 
-describe("ReviewCommentFormatter status", () => {
-  test("running links to the run", () => {
-    expect(new ReviewCommentFormatter(run).running()).toContain(
-      "⏳ Reviewing `abc1234`… [Follow the run](https://github.com/owner/repo/actions/runs/42)",
+describe("ReviewCommentFormatter failure", () => {
+  test("links to the run log", () => {
+    expect(new ReviewCommentFormatter(run).failure(new Error("x"))).toContain(
+      "[See the run log](https://github.com/owner/repo/actions/runs/42)",
     );
   });
 
@@ -449,14 +449,6 @@ describe("ReviewCommentFormatter status", () => {
     expect(body).not.toContain("sk-123");
     expect(body).not.toContain("ghs_456");
   });
-
-  test("cancellation says so instead of showing an error", () => {
-    const body = new ReviewCommentFormatter(run).failure(new Error("aborted"), {
-      cancelled: true,
-    });
-    expect(body).toContain("was cancelled before it finished");
-    expect(body).not.toContain("aborted");
-  });
 });
 
 describe("ReviewCommentFormatter warnings", () => {
@@ -469,14 +461,8 @@ describe("ReviewCommentFormatter warnings", () => {
   }
 
   test("leave the comment alone when there are none", () => {
-    expect(new ReviewCommentFormatter(run).running()).not.toContain(
+    expect(new ReviewCommentFormatter(run).review(review([]))).not.toContain(
       "[!WARNING]",
-    );
-  });
-
-  test("open the running status", () => {
-    expect(warned().running()).toStartWith(
-      `## diffcop review\n\n${alert}⏳ Reviewing`,
     );
   });
 
@@ -495,8 +481,8 @@ describe("ReviewCommentFormatter warnings", () => {
   test("each get their own alert", () => {
     const formatter = warned();
     formatter.addWarning("Another one.");
-    expect(formatter.running()).toContain(
-      `${alert}> [!WARNING]\n> Another one.\n\n⏳`,
+    expect(formatter.review(review([]))).toContain(
+      `${alert}> [!WARNING]\n> Another one.\n\n✅`,
     );
   });
 });
@@ -573,23 +559,19 @@ describe("ReviewCommentFormatter ledger", () => {
     expect(rounds[0]).toEqual(earlier.rounds[0]);
   });
 
-  test("carries the earlier rounds through the running, failed and cancelled statuses", () => {
+  test("carries the earlier rounds through a failed review", () => {
     const formatter = new ReviewCommentFormatter(pr);
     formatter.setLedger(earlier);
 
-    for (const body of [
-      formatter.running(),
-      formatter.failure(new Error("rate limited")),
-      formatter.failure(new Error("aborted"), { cancelled: true }),
-    ]) {
-      expect(readLedger(body)).toEqual(earlier);
-    }
+    expect(readLedger(formatter.failure(new Error("rate limited")))).toEqual(
+      earlier,
+    );
   });
 
-  test("leaves the statuses alone on a PR's first review", () => {
-    expect(new ReviewCommentFormatter(pr).running()).not.toContain(
-      "diffcop:ledger",
-    );
+  test("adds no ledger to a failure of a PR's first review", () => {
+    expect(
+      new ReviewCommentFormatter(pr).failure(new Error("rate limited")),
+    ).not.toContain("diffcop:ledger");
   });
 
   test("redacts secrets from the ledger", () => {
@@ -648,9 +630,10 @@ describe("ReviewCommentFormatter ledger", () => {
       }),
     });
 
-    const ledger = readLedger(formatter.running());
+    const failure = formatter.failure(new Error("rate limited"));
+    const ledger = readLedger(failure);
 
-    expect(formatter.running().length).toBeLessThan(21_000);
+    expect(failure.length).toBeLessThan(21_000);
     expect(ledger?.rounds).toHaveLength(2);
     expect(ledger?.rounds[0]?.entries[0]?.explanation).toBeUndefined();
     expect(ledger?.rounds[0]?.entries[0]?.reason).toBe("Deliberate.");

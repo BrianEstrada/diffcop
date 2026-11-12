@@ -1,7 +1,7 @@
 # Runs `diffcop review --reporter github` on the calling repo's pull request; diffcop posts the review itself.
 # The caller checks out the PR head with fetch-depth: 0 so diffcop can find the merge base.
 name: diffcop
-description: AI code review for pull requests, kept in a single PR comment.
+description: AI code review for pull requests, posted as a PR comment and a commit status.
 author: Brian Estrada
 branding:
   icon: shield
@@ -15,7 +15,7 @@ inputs:
     description: OAuth token from `claude setup-token`, for Claude subscriptions.
     required: false
   github-token:
-    description: Token that reads the PR and posts the review comment. Needs pull-requests write.
+    description: Token that reads the PR and posts the review comment and status. Needs pull-requests write, and statuses write for the status.
     required: false
     default: ${{ github.token }}
   prompt:
@@ -95,5 +95,5 @@ runs:
           args+=(--debug)
         fi
 
-        # exec so a cancel's SIGINT reaches diffcop, which then marks the comment cancelled.
+        # exec so a cancel's SIGINT reaches diffcop, which then marks the status cancelled.
         exec bun src/cli.ts "${args[@]}" "$PROMPT"

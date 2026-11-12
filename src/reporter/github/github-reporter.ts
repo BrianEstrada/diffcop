@@ -9,7 +9,7 @@ import {
 } from "@/reporter/github/commit-status";
 import type { CommitStatus } from "@/reporter/github/commit-status";
 import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
-import type { StickyComment } from "@/reporter/github/sticky-comment";
+import type { ReviewComments } from "@/reporter/github/review-comments";
 
 export interface GitHubReporterOptions {
   // Also log tool calls and thinking time, to see where a slow run went.
@@ -17,14 +17,14 @@ export interface GitHubReporterOptions {
 }
 
 export class GitHubReporter implements ReviewReporter {
-  readonly #comment: StickyComment;
+  readonly #comment: ReviewComments;
   readonly #formatter: ReviewCommentFormatter;
   readonly #status: Pick<CommitStatus, "post">;
   readonly #log: TextSink;
   readonly #debug: boolean;
 
   constructor(
-    comment: StickyComment,
+    comment: ReviewComments,
     formatter: ReviewCommentFormatter,
     status: Pick<CommitStatus, "post">,
     log: TextSink,
@@ -37,18 +37,17 @@ export class GitHubReporter implements ReviewReporter {
     this.#debug = debug;
   }
 
-  // Only a status update, so a failure here (e.g. a GitHub API blip) doesn't
-  // stop the review; the result is still posted when it's done.
+  // Nothing is posted to the PR while the review runs: the status shows that it's
+  // running, and the comment is posted when there's a review to read.
   async started() {
-    if (await this.#postRunning()) {
+    if (!(await this.#superseded())) {
       await this.#status.post(REVIEWING);
     }
   }
 
-  // Re-posts the running comment so the warning shows while the review runs.
+  // Kept for the comment the review ends with.
   async warning(message: string) {
     this.#formatter.addWarning(message);
-    await this.#postRunning();
   }
 
   toolCall(toolName: string, input: string) {
@@ -68,23 +67,25 @@ export class GitHubReporter implements ReviewReporter {
     this.#log.write(`${verifyingLine(findings)}\n`);
   }
 
-  // Unlike the status updates, a failed post throws: the run should fail, not
-  // pass with the comment stuck on "running".
+  // A failed post throws: the run should fail, not pass without its review.
   async completed(result: ReviewResult) {
     if (await this.#post(this.#formatter.review(result))) {
+      await this.#hideOutdated();
       await this.#status.post(reviewStatus(result, this.#comment.url));
     }
   }
 
+  // A cancelled run posts no comment: mostly a newer push cancelled it, and that push's review follows.
   async failed(error: Error, { cancelled }: { cancelled: boolean }) {
-    const body = this.#formatter.failure(error, { cancelled: cancelled });
-    if (await this.#postOrWarn(body)) {
-      await this.#status.post(failureStatus(cancelled));
+    if (cancelled) {
+      if (!(await this.#superseded())) {
+        await this.#status.post(failureStatus(true));
+      }
+      return;
     }
-  }
-
-  #postRunning() {
-    return this.#postOrWarn(this.#formatter.running());
+    if (await this.#postOrWarn(this.#formatter.failure(error))) {
+      await this.#status.post(failureStatus(false));
+    }
   }
 
   // False only when a newer run owns the comment, and then the commit's status is that run's too.
@@ -97,13 +98,22 @@ export class GitHubReporter implements ReviewReporter {
     }
   }
 
-  // Every post respects a newer run's claim, the running status included, so a
-  // re-run of an older workflow run can't replace the newer run's review.
+  // A run that can't tell goes on as if it weren't: the post that ends it checks again.
+  async #superseded() {
+    try {
+      return await this.#comment.superseded();
+    } catch {
+      return false;
+    }
+  }
+
+  // Each commit's review is a comment of its own, and a re-run of an older
+  // workflow run can't replace or follow a newer run's.
   async #post(body: string) {
     const posted = await this.#comment.upsert(body, { onlyIfOwned: true });
     const where = this.#comment.location;
     if (posted) {
-      this.#log.write(`Updated the diffcop comment on ${where}\n`);
+      this.#log.write(`Posted the diffcop comment on ${where}\n`);
     } else {
       this.#log.write(
         `A newer run has taken over the diffcop comment on ${where}; leaving it alone\n`,
@@ -112,7 +122,23 @@ export class GitHubReporter implements ReviewReporter {
     return posted;
   }
 
+  // The review is posted by now, so a comment left showing isn't worth failing the run for.
+  async #hideOutdated() {
+    try {
+      const hidden = await this.#comment.hideOutdated();
+      if (hidden > 0) {
+        this.#log.write(
+          `Hid ${hidden} earlier diffcop comment${hidden === 1 ? "" : "s"} as outdated\n`,
+        );
+      }
+    } catch (cause) {
+      this.#log.write(
+        `Couldn't hide the earlier diffcop comments: ${String(toError(cause))}\n`,
+      );
+    }
+  }
+
   #warn(error: Error) {
-    this.#log.write(`Couldn't update the diffcop comment: ${String(error)}\n`);
+    this.#log.write(`Couldn't post the diffcop comment: ${String(error)}\n`);
   }
 }

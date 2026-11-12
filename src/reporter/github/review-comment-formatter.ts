@@ -13,7 +13,7 @@ import { runDetailsSection } from "@/reporter/run-details";
 
 // GitHub rejects comment bodies over 65,536 characters.
 const MAX_COMMENT_CHARS = 60_000;
-// Room left under GitHub's limit for the markers `StickyComment` adds.
+// Room left under GitHub's limit for the markers `ReviewComments` adds.
 const MAX_SAVED_COMMENT_CHARS = 65_000;
 const MAX_ERROR_CHARS = 2_000;
 // The ledger's share of the comment, taken out of the visible review's.
@@ -66,28 +66,13 @@ export class ReviewCommentFormatter {
     this.#warnings.push(message);
   }
 
-  // Read from the comment before this run replaces it. Every status posted from
-  // here on carries it, so a failed or cancelled run doesn't lose the earlier rounds.
+  // Read from the newest comment before this run posts its own, which carries it on,
+  // so a failed run doesn't lose the earlier rounds.
   setLedger(ledger: ReviewLedger | undefined) {
     this.#ledger = ledger;
   }
 
-  running() {
-    return this.#withLedger(
-      this.#frame([
-        `⏳ Reviewing \`${this.#shortSha()}\`…${this.#runLink("Follow the run")}`,
-      ]),
-    );
-  }
-
-  failure(error: Error, { cancelled = false } = {}) {
-    if (cancelled) {
-      return this.#withLedger(
-        this.#frame([
-          `⚪ The review of \`${this.#shortSha()}\` was cancelled before it finished.${this.#runLink("See the run")}`,
-        ]),
-      );
-    }
+  failure(error: Error) {
     return this.#withLedger(
       this.#frame([
         `❌ The review of \`${this.#shortSha()}\` failed.${this.#runLink("See the run log")}`,

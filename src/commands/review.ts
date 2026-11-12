@@ -17,7 +17,7 @@ import { CommitStatus } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
 import { readLedger } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
-import { StickyComment } from "@/reporter/github/sticky-comment";
+import { ReviewComments } from "@/reporter/github/review-comments";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
 import {
@@ -103,7 +103,7 @@ function createGitHubComment(
     );
   }
   return {
-    comment: new StickyComment(pr, github),
+    comment: new ReviewComments(pr, github),
     status: new CommitStatus(pr, github, process.stderr),
     formatter: new ReviewCommentFormatter(pr, {
       secrets: [
@@ -223,7 +223,7 @@ export default defineCommand({
       options: [...REPORTERS],
       default: "console",
       description:
-        "Where the review goes: console shows progress then the findings, json prints one object when done, github keeps it in a PR comment (GitHub Actions only; needs GITHUB_TOKEN or GH_TOKEN)",
+        "Where the review goes: console shows progress then the findings, json prints one object when done, github posts it as a PR comment and a commit status (GitHub Actions only; needs GITHUB_TOKEN or GH_TOKEN)",
     },
     debug: {
       type: "boolean",
@@ -323,7 +323,6 @@ export default defineCommand({
     if (args.ledger !== undefined) {
       ledgerFile = new LedgerFile(args.ledger);
     }
-    // Read before the review starts: its first status update replaces the comment.
     const ledger = await loadLedger(githubComment, ledgerFile);
     // A round is keyed by its commit, so reviewing one again redoes its round.
     let headSha = pr?.headSha;

@@ -85,9 +85,9 @@ describe("SavedReviewComment", () => {
     expect(await store.load()).toEqual(readSavedReview(reviewed));
   });
 
-  test("loads nothing from a comment showing a running review", async () => {
+  test("loads nothing from a comment showing a failed review", async () => {
     const store = new SavedReviewComment(
-      new FakeComment(formatter.running()),
+      new FakeComment(formatter.failure(new Error("rate limited"))),
       formatter,
       new FakeStatus(),
     );
@@ -174,9 +174,9 @@ describe("SavedReviewComment", () => {
     expect(readLedger(comment.body ?? "")).toEqual(ledger);
   });
 
-  test("leaves a comment alone once a newer review is running", async () => {
-    const running = formatter.running();
-    const comment = new FakeComment(running);
+  test("leaves a comment alone once a newer review has failed", async () => {
+    const failed = formatter.failure(new Error("rate limited"));
+    const comment = new FakeComment(failed);
     const updates: SavedReview[] = [];
     const status = new FakeStatus();
 
@@ -197,7 +197,7 @@ describe("SavedReviewComment", () => {
 
     expect(written).toBe(false);
     expect(updates).toEqual([]);
-    expect(comment.body).toBe(running);
+    expect(comment.body).toBe(failed);
     expect(status.updates).toEqual([]);
   });
 });
