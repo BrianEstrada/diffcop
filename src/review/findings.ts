@@ -127,38 +127,6 @@ export function removeDuplicates(findings: Finding[], duplicates: Duplicate[]) {
   };
 }
 
-// A finding from an earlier round has that round's line numbers, so when a
-// finder found the same defect afresh, the fresh one is the one to keep.
-export function preferFresh(
-  { kept, merged }: { kept: Finding[]; merged: MergedFinding[] },
-  carried: ReadonlySet<Finding>,
-) {
-  const fresh = new Map<Finding, Finding>();
-  for (const { finding, into } of merged) {
-    if (carried.has(into) && !carried.has(finding) && !fresh.has(into)) {
-      fresh.set(into, finding);
-    }
-  }
-  return {
-    kept: kept.map((finding) => {
-      return fresh.get(finding) ?? finding;
-    }),
-    merged: merged.map(({ finding, into }) => {
-      const replacement = fresh.get(into);
-      if (replacement === finding) {
-        return {
-          finding: into,
-          into: replacement,
-        };
-      }
-      return {
-        finding: finding,
-        into: replacement ?? into,
-      };
-    }),
-  };
-}
-
 export interface DroppedFinding {
   finding: Finding;
   // Why the verifier didn't confirm it.

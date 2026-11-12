@@ -10,7 +10,6 @@ import type { ReviewReporter } from "@/reporter/review-reporter";
 import {
   duplicatesSchema,
   findingsSchema,
-  preferFresh,
   removeDuplicates,
   splitByVerdict,
   verdictsSchema,
@@ -184,34 +183,30 @@ export class FindAndVerify {
       });
     });
     const fresh = kept.flat();
-    // Grows as a carried finding is merged into a fresh one: that one then stands for it.
-    const carried = new Set(previous ? carriedFindings(previous.rounds) : []);
-    let findings = [...fresh, ...carried];
+    let findings = fresh;
     const merging: AgentResult<unknown>[] = [];
     const merged: MergedFinding[] = [];
-    const repeatable =
-      found.length > 1 || (carried.size > 0 && fresh.length > 0);
-    if (repeatable && findings.length > 1) {
+    if (found.length > 1 && findings.length > 1) {
       const deduplicated = await this.#deduplicate(
         context,
         findings,
         abortSignal,
       );
       if (deduplicated) {
-        const deduped = preferFresh(
-          removeDuplicates(findings, deduplicated.output.duplicates),
-          carried,
+        const deduped = removeDuplicates(
+          findings,
+          deduplicated.output.duplicates,
         );
         findings = deduped.kept;
         merged.push(...deduped.merged);
         merging.push(deduplicated);
-        for (const { finding, into } of deduped.merged) {
-          if (carried.has(finding)) {
-            carried.add(into);
-          }
-        }
       }
     }
+    // Carried findings skip the merge and get a verdict of their own: one merged into a finder's
+    // similar finding would share that finding's fate, and be called fixed when it was refuted.
+    // Grows as the verifier marks one a repeat of another in its batch, which then stands for it.
+    const carried = new Set(previous ? carriedFindings(previous.rounds) : []);
+    findings = [...findings, ...carried];
 
     const verified: AgentResult<unknown>[] = [];
     const confirmed: Finding[] = [];
@@ -244,7 +239,6 @@ export class FindAndVerify {
           batches[index] ?? [],
           result.output.verdicts,
         );
-        // The verifier can also mark a carried finding as a repeat of another in its batch.
         for (const [finding, original] of split.duplicates) {
           if (carried.has(finding)) {
             carried.add(original);

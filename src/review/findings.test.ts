@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   findingsSchema,
   numberFindings,
-  preferFresh,
   removeDuplicates,
   splitByVerdict,
   verdictsSchema,
@@ -539,88 +538,6 @@ describe("numberFindings on a re-review", () => {
         ...fresh,
       },
     ]);
-  });
-});
-
-describe("preferFresh", () => {
-  const carried = finding("Carried");
-  const fresh = finding("Fresh");
-  const other = finding("Other");
-
-  test("keeps the fresh finding when it was merged into a carried one", () => {
-    expect(
-      preferFresh(
-        {
-          kept: [carried, other],
-          merged: [
-            {
-              finding: fresh,
-              into: carried,
-            },
-          ],
-        },
-        new Set([carried]),
-      ),
-    ).toEqual({
-      kept: [fresh, other],
-      merged: [
-        {
-          finding: carried,
-          into: fresh,
-        },
-      ],
-    });
-  });
-
-  test("points every other duplicate of the carried finding at the fresh one", () => {
-    expect(
-      preferFresh(
-        {
-          kept: [carried],
-          merged: [
-            {
-              finding: fresh,
-              into: carried,
-            },
-            {
-              finding: other,
-              into: carried,
-            },
-          ],
-        },
-        new Set([carried]),
-      ),
-    ).toEqual({
-      kept: [fresh],
-      merged: [
-        {
-          finding: carried,
-          into: fresh,
-        },
-        {
-          finding: other,
-          into: fresh,
-        },
-      ],
-    });
-  });
-
-  test("leaves merges between fresh findings, or into a fresh one, as they are", () => {
-    const deduped = {
-      kept: [fresh],
-      merged: [
-        {
-          finding: other,
-          into: fresh,
-        },
-        {
-          finding: carried,
-          into: fresh,
-        },
-      ],
-    };
-
-    expect(preferFresh(deduped, new Set([carried]))).toEqual(deduped);
   });
 });
 
