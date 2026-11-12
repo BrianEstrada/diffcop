@@ -2,6 +2,7 @@ import type { RunStats } from "@/agent/reviewer-agent";
 import type { PullRequestContext } from "@/context/github/pull-request-context";
 import type { ReviewResult } from "@/review/findings";
 import { appendRound } from "@/review/review-ledger";
+import type { ReviewLedger } from "@/review/review-ledger";
 import { summarizeFinders } from "@/review/saved-review";
 import type { SavedReview } from "@/review/saved-review";
 import { ledgerMarker } from "@/reporter/github/ledger-marker";
@@ -88,7 +89,11 @@ export class ReviewCommentFormatter {
   }
 
   // `recheck` is the run that re-checked only the description, listed under the review's own run.
-  savedReview(saved: SavedReview, { recheck }: { recheck?: RunStats } = {}) {
+  // `earlier` is the ledger of a comment from when diffcop kept one: nothing else holds its rounds.
+  savedReview(
+    saved: SavedReview,
+    { recheck, earlier }: { recheck?: RunStats; earlier?: ReviewLedger } = {},
+  ) {
     const { headSha, warnings, result } = saved;
     const reviewed = [`Reviewed ${headSha.slice(0, 7)}`];
     const since = result.rereview?.since;
@@ -109,7 +114,7 @@ export class ReviewCommentFormatter {
     });
     // Set aside before the review's own sections, so a long review can't truncate the run's numbers away.
     const runBlock = details(runDetails, this.#redact(runDetails.body));
-    const memory = this.#memory(saved);
+    const memory = this.#memory(saved, earlier);
     const room =
       MAX_COMMENT_CHARS -
       memory.join("\n").length -
@@ -132,17 +137,21 @@ export class ReviewCommentFormatter {
   // What later runs read back, hidden after the review: the saved review, which a description
   // re-check renders again and the next round takes this round's findings from. One too long
   // for its share leaves just those findings, cut down until they fit.
-  #memory(saved: SavedReview) {
+  #memory(saved: SavedReview, earlier: ReviewLedger | undefined) {
     const marker = savedReviewMarker(saved, this.#secrets);
-    if (marker.length <= MAX_MEMORY_CHARS) {
+    const fits = marker.length <= MAX_MEMORY_CHARS;
+    if (fits && !earlier) {
       return [marker];
     }
-    const round = ledgerMarker(
-      appendRound(undefined, saved.headSha, saved.result),
+    const rounds = ledgerMarker(
+      earlier ?? appendRound(undefined, saved.headSha, saved.result),
       this.#secrets,
       MAX_MEMORY_CHARS,
     );
-    return round === undefined ? [] : [round];
+    return [
+      ...(rounds === undefined ? [] : [rounds]),
+      ...(fits ? [marker] : []),
+    ];
   }
 
   // Truncates inside a section's body, so a cut never leaves <details> open.

@@ -209,6 +209,15 @@ describe("ledgerFromComments", () => {
     );
   });
 
+  test("skips a saved review whose commit isn't a SHA", () => {
+    const found = ledgerFromComments([
+      reviewComment("aaaaaaa", "First"),
+      reviewComment("--output=x", "Forged"),
+    ]);
+
+    expect(titles(found)).toEqual(["aaaaaaa: First"]);
+  });
+
   test("skips a comment that holds no review, such as a failure", () => {
     const found = ledgerFromComments([
       reviewComment("aaaaaaa", "First"),

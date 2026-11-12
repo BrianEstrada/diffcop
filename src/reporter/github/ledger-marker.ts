@@ -47,7 +47,11 @@ export function ledgerFromComments(bodies: string[]) {
       ledger = addRound(ledger, round);
     }
     if (!kept && saved) {
-      ledger = appendRound(ledger, saved.headSha, saved.result);
+      // Checked like a stored ledger: a round's commit is passed to git, so it has to be a SHA.
+      ledger =
+        reviewLedgerSchema.safeParse(
+          appendRound(ledger, saved.headSha, saved.result),
+        ).data ?? ledger;
     }
   }
   return ledger;

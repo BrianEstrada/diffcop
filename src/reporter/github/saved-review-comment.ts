@@ -2,6 +2,7 @@ import type { RunStats } from "@/agent/reviewer-agent";
 import type { SavedReviewStore } from "@/review/description-rechecker";
 import type { SavedReview } from "@/review/saved-review";
 import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
+import { readLedger } from "@/reporter/github/ledger-marker";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
 import type { ReviewComments } from "@/reporter/github/review-comments";
 import { reviewStatus } from "@/reporter/github/commit-status";
@@ -43,7 +44,11 @@ export class SavedReviewComment implements SavedReviewStore {
         return undefined;
       }
       rewritten = updated;
-      return this.#formatter.savedReview(updated, { recheck: recheck });
+      // Only a comment from when diffcop kept one has a ledger next to its saved review.
+      return this.#formatter.savedReview(updated, {
+        recheck: recheck,
+        earlier: readLedger(body),
+      });
     });
     // A description finding can be what turned the status red, so it follows the comment.
     if (written && rewritten) {
