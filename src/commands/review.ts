@@ -15,7 +15,7 @@ import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
 import { CommitStatus } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
-import { readLedger } from "@/reporter/github/ledger-marker";
+import { ledgerFromComments } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import { ReviewComments } from "@/reporter/github/review-comments";
 import type { ReviewReporter } from "@/reporter/review-reporter";
@@ -132,8 +132,8 @@ function createLocalReporter(
   }
 }
 
-// What earlier reviews of this change found: from the PR comment, where the
-// formatter then keeps it, or from the --ledger file of a local run.
+// What earlier reviews of this change found: from diffcop's comments on the PR,
+// each of which keeps its own round, or from the --ledger file of a local run.
 async function loadLedger(
   githubComment: GitHubComment | undefined,
   ledgerFile: LedgerFile | undefined,
@@ -141,9 +141,7 @@ async function loadLedger(
   if (!githubComment) {
     return ledgerFile?.load();
   }
-  const ledger = readLedger((await githubComment.comment.read()) ?? "");
-  githubComment.formatter.setLedger(ledger);
-  return ledger;
+  return ledgerFromComments(await githubComment.comment.readAll());
 }
 
 function recheckLine(outcome: RecheckOutcome) {
@@ -211,7 +209,7 @@ export default defineCommand({
     ledger: {
       type: "string",
       description:
-        "File that keeps what earlier reviews of this change found, so the next one doesn't repeat them. For local runs: --reporter github keeps it in the PR comment",
+        "File that keeps what earlier reviews of this change found, so the next one doesn't repeat them. For local runs: --reporter github reads them from its PR comments",
     },
     full: {
       type: "boolean",
@@ -250,7 +248,7 @@ export default defineCommand({
     if (args.reporter === "github") {
       if (args.ledger !== undefined) {
         throw new Error(
-          "--ledger is for local runs; --reporter github keeps the ledger in the PR comment.",
+          "--ledger is for local runs; --reporter github reads the earlier rounds from its PR comments.",
         );
       }
       githubComment = createGitHubComment(pr, github);

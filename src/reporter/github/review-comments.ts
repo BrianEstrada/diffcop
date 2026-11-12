@@ -87,6 +87,11 @@ function describeFailure(cause: unknown) {
   );
 }
 
+export interface UpsertOptions {
+  onlyIfOwned?: boolean;
+  keep?: (body: string) => boolean;
+}
+
 // diffcop's comments on a PR: one per reviewed commit, the newest being the current review.
 // Find-then-create isn't atomic, and GitHub can't create a comment only if absent,
 // so runs for one PR must be serialized (the workflow's `concurrency` group).
@@ -113,9 +118,10 @@ export class ReviewComments {
   // Edits the newest comment when it's about this commit, and posts a new one otherwise.
   // With `onlyIfOwned`, skips the write and returns false if a newer run has
   // claimed the newest comment; a claim by an older (e.g. cancelled) run is taken over.
-  async upsert(body: string, { onlyIfOwned = false } = {}) {
+  // A comment whose body `keep` accepts is never edited: a new one is posted after it.
+  async upsert(body: string, options: UpsertOptions = {}) {
     try {
-      return await this.#upsert(body, onlyIfOwned);
+      return await this.#upsert(body, options);
     } catch (error) {
       throw describeFailure(error);
     }
@@ -124,6 +130,17 @@ export class ReviewComments {
   async read() {
     try {
       return (await this.#newest())?.body;
+    } catch (error) {
+      throw describeFailure(error);
+    }
+  }
+
+  // Every diffcop comment on the PR, oldest first.
+  async readAll() {
+    try {
+      return (await this.#mine()).flatMap(({ body }) => {
+        return body === undefined ? [] : [body];
+      });
     } catch (error) {
       throw describeFailure(error);
     }
@@ -216,12 +233,12 @@ export class ReviewComments {
 
   async #upsert(
     body: string,
-    onlyIfOwned: boolean,
+    options: UpsertOptions,
     attempt = 1,
   ): Promise<boolean> {
     const { runId, headSha } = this.#pr;
     const newest = await this.#newest();
-    if (onlyIfOwned && this.#claimedByNewerRun(newest)) {
+    if (options.onlyIfOwned && this.#claimedByNewerRun(newest)) {
       return false;
     }
 
@@ -231,7 +248,7 @@ export class ReviewComments {
       headMarker(headSha),
       body,
     ].join("\n");
-    if (newest?.body !== undefined && reviewedHead(newest.body) === headSha) {
+    if (newest && this.#editable(newest, options)) {
       await this.#github.request(
         "PATCH /repos/{owner}/{repo}/issues/comments/{comment_id}",
         {
@@ -264,9 +281,17 @@ export class ReviewComments {
         throw error;
       }
       await Bun.sleep(attempt ** 2 * this.#github.retryAfterBaseValue);
-      return this.#upsert(body, onlyIfOwned, attempt + 1);
+      return this.#upsert(body, options, attempt + 1);
     }
     return true;
+  }
+
+  #editable({ body }: IssueComment, { keep }: UpsertOptions) {
+    return (
+      body !== undefined &&
+      reviewedHead(body) === this.#pr.headSha &&
+      !keep?.(body)
+    );
   }
 
   #claimedByNewerRun(comment: IssueComment | undefined) {

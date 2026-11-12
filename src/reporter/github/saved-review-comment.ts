@@ -2,7 +2,6 @@ import type { RunStats } from "@/agent/reviewer-agent";
 import type { SavedReviewStore } from "@/review/description-rechecker";
 import type { SavedReview } from "@/review/saved-review";
 import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
-import { readLedger } from "@/reporter/github/ledger-marker";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
 import type { ReviewComments } from "@/reporter/github/review-comments";
 import { reviewStatus } from "@/reporter/github/commit-status";
@@ -44,11 +43,7 @@ export class SavedReviewComment implements SavedReviewStore {
         return undefined;
       }
       rewritten = updated;
-      // A re-check changes only description findings, which the ledger doesn't hold.
-      return this.#formatter.savedReview(updated, {
-        recheck: recheck,
-        ledger: readLedger(body),
-      });
+      return this.#formatter.savedReview(updated, { recheck: recheck });
     });
     // A description finding can be what turned the status red, so it follows the comment.
     if (written && rewritten) {

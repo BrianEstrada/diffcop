@@ -47,15 +47,36 @@ const graphqlCall = z.object({
     .optional(),
 });
 
+const result: ReviewResult = {
+  summary: "",
+  findings: [],
+  dropped: [],
+  explored: {
+    filesRead: [],
+    searches: [],
+  },
+  stats: {
+    durationMs: 1_000,
+    toolCalls: 0,
+  },
+};
+
+const formatter = new ReviewCommentFormatter(pr);
+
+const REVIEWED = formatter.review(result);
+const FAILED = formatter.failure(new Error("boom"));
+
 interface Write {
   method: string;
   body: string;
 }
 
-// The PR starts with one diffcop comment: run `claimedBy`'s review of `reviewed`.
+// The PR starts with one diffcop comment: run `claimedBy`'s review of `reviewed`, or with
+// `failure`, its failed attempt at one.
 function fakeGitHub({
   claimedBy = "41",
   reviewed = EARLIER_COMMIT,
+  failure = false,
   failWrites = false,
   failLists = false,
   failHides = false,
@@ -68,7 +89,12 @@ function fakeGitHub({
       node_id: "C500",
       html_url: EARLIER_URL,
       user: { login: "github-actions[bot]" },
-      body: `<!-- diffcop:review -->\n<!-- diffcop:run=${claimedBy} -->\n<!-- diffcop:head=${reviewed} -->`,
+      body: [
+        "<!-- diffcop:review -->",
+        `<!-- diffcop:run=${claimedBy} -->`,
+        `<!-- diffcop:head=${reviewed} -->`,
+        failure ? FAILED : REVIEWED,
+      ].join("\n"),
     },
   ];
   async function graphql(url: string, init?: RequestInit) {
@@ -133,20 +159,6 @@ function fakeGitHub({
     fetch: fetch,
   };
 }
-
-const result: ReviewResult = {
-  summary: "",
-  findings: [],
-  dropped: [],
-  explored: {
-    filesRead: [],
-    searches: [],
-  },
-  stats: {
-    durationMs: 1_000,
-    toolCalls: 0,
-  },
-};
 
 function createReporter(
   fetch: Fetch,
@@ -369,6 +381,29 @@ describe("GitHubReporter", () => {
         description: "The review failed",
       },
     ]);
+  });
+
+  test("failed posts after this commit's review, not over it", async () => {
+    const { writes, fetch } = fakeGitHub({ reviewed: pr.headSha });
+    const { reporter } = createReporter(fetch);
+
+    await reporter.failed(new Error("boom"), { cancelled: false });
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.method).toBe("POST");
+  });
+
+  test("failed edits this commit's earlier failure", async () => {
+    const { writes, fetch } = fakeGitHub({
+      reviewed: pr.headSha,
+      failure: true,
+    });
+    const { reporter } = createReporter(fetch);
+
+    await reporter.failed(new Error("boom again"), { cancelled: false });
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.method).toBe("PATCH");
   });
 
   test("failed warns instead of throwing when the post fails", async () => {
