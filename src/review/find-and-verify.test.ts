@@ -335,6 +335,8 @@ describe("FindAndVerify on a re-review", () => {
     expect(result.rereview).toEqual({
       since: "aaaaaaa",
       settled: [],
+      fixed: [],
+      stillOpen: 0,
       leftOut: 2,
     });
   });
@@ -364,11 +366,13 @@ describe("FindAndVerify on a re-review", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.rereview).toEqual({
       settled: [],
+      fixed: [],
+      stillOpen: 0,
       leftOut: 0,
     });
   });
 
-  test("checks the last round's blocking bug again, and keeps it while it's still there", async () => {
+  test("checks the last round's finding again, and keeps it while it's still there", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
@@ -399,16 +403,78 @@ describe("FindAndVerify on a re-review", () => {
         endLine: 14,
       },
     ]);
+    expect(result.rereview).toMatchObject({
+      fixed: [],
+      stillOpen: 1,
+    });
   });
 
-  test("drops a carried bug that was fixed without listing it as dropped", async () => {
+  test("carries a minor finding over too, though the code it cites hasn't changed", async () => {
+    const minor = {
+      ...reported("Open nit"),
+      severity: "nit" as const,
+      startLine: 50,
+      endLine: 50,
+    };
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [],
+      },
+      { verdicts: [verdict(1, "confirmed")] },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([minor]), [prompt]);
+
+    expect(findingsSent(agent.runs[1])).toEqual([["Open nit", true]]);
+    expect(
+      result.findings.map(({ title, severity }) => {
+        return [title, severity];
+      }),
+    ).toEqual([["Open nit", "nit"]]);
+    expect(result.rereview).toMatchObject({
+      stillOpen: 1,
+      leftOut: 0,
+    });
+  });
+
+  test("moves a carried finding the author declined to the settled ones", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [],
+      },
+      { verdicts: [verdict(1, "settled", "Declined in the description.")] },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Declined")]), [prompt]);
+
+    expect(result.findings).toEqual([]);
+    expect(result.rereview).toMatchObject({
+      settled: [
+        {
+          finding: finding("Declined"),
+          reason: "Declined in the description.",
+        },
+      ],
+      fixed: [],
+      stillOpen: 0,
+    });
+  });
+
+  test("reports a carried finding the code no longer has as fixed, not as dropped", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
         findings: [finding("New")],
-      },
-      {
-        duplicates: [],
       },
       {
         verdicts: [
@@ -431,9 +497,18 @@ describe("FindAndVerify on a re-review", () => {
         reason: "A guard.",
       },
     ]);
+    expect(result.rereview).toMatchObject({
+      fixed: [
+        {
+          finding: finding("Fixed since"),
+          reason: "Fixed.",
+        },
+      ],
+      stillOpen: 0,
+    });
   });
 
-  test("lists a carried bug as dropped when the verifier skipped it, so it isn't lost silently", async () => {
+  test("keeps a carried finding open when the verifier gave no clear verdict on it", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
@@ -448,34 +523,26 @@ describe("FindAndVerify on a re-review", () => {
       silent,
     ).run(reviewedBefore([reported("Skipped")]), [prompt]);
 
-    expect(result.dropped).toEqual([
-      {
-        finding: finding("Skipped"),
-        reason: "No verdict returned",
-      },
-    ]);
+    expect(result.findings).toEqual([finding("Skipped")]);
+    expect(result.dropped).toEqual([]);
+    expect(result.rereview).toMatchObject({
+      fixed: [],
+      stillOpen: 1,
+    });
   });
 
-  test("merges a carried bug a finder found again, keeping the fresh finding", async () => {
-    const fresh = {
-      ...finding("Found again"),
-      startLine: 30,
-      endLine: 31,
-    };
+  test("gives a carried finding and a finder's similar one a verdict each, without merging them", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
-        findings: [fresh],
+        findings: [finding("Similar, but wrong")],
       },
       {
-        duplicates: [
-          {
-            id: 1,
-            duplicateOf: 2,
-          },
+        verdicts: [
+          verdict(1, "refuted", "Deliberate, not a defect."),
+          verdict(2, "refuted", "The guard was added."),
         ],
       },
-      { verdicts: [verdict(1, "confirmed")] },
     ]);
 
     const result = await new FindAndVerify(
@@ -484,9 +551,122 @@ describe("FindAndVerify on a re-review", () => {
       silent,
     ).run(reviewedBefore([reported("Carried")]), [prompt]);
 
-    expect(agent.runs[1]?.prompt.instructions).toContain("without using tools");
-    expect(findingsSent(agent.runs[2])).toEqual([["Found again", false]]);
-    expect(result.findings).toEqual([fresh]);
+    expect(agent.runs).toHaveLength(2);
+    expect(findingsSent(agent.runs[1])).toEqual([
+      ["Similar, but wrong", false],
+      ["Carried", true],
+    ]);
+    expect(result.dropped).toEqual([
+      {
+        finding: finding("Similar, but wrong"),
+        reason: "Deliberate, not a defect.",
+      },
+    ]);
+    expect(result.rereview?.fixed).toEqual([
+      {
+        finding: finding("Carried"),
+        reason: "The guard was added.",
+      },
+    ]);
+  });
+
+  test("keeps carried findings out of the merge of several finders' findings", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("From one")],
+      },
+      {
+        summary: "",
+        findings: [finding("From two")],
+      },
+      { duplicates: [] },
+      {
+        verdicts: [1, 2, 3].map((id) => {
+          return verdict(id, "confirmed");
+        }),
+      },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Carried")]), [prompt, prompt]);
+
+    expect(JSON.stringify(agent.runs[2]?.prompt)).not.toContain("Carried");
+    expect(findingsSent(agent.runs[3])).toEqual([
+      ["From one", false],
+      ["From two", false],
+      ["Carried", true],
+    ]);
+    expect(result.rereview).toMatchObject({ stillOpen: 1 });
+  });
+
+  test("reports a carried finding as fixed when the verifier marks it a repeat of one it refutes", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("Found again")],
+      },
+      {
+        verdicts: [
+          verdict(1, "refuted", "The guard was added."),
+          {
+            ...verdict(2, "duplicate"),
+            duplicateOf: 1,
+          },
+        ],
+      },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Carried")]), [prompt]);
+
+    expect(result.findings).toEqual([]);
+    expect(result.dropped).toEqual([]);
+    expect(result.rereview).toMatchObject({
+      fixed: [
+        {
+          finding: finding("Found again"),
+          reason: "The guard was added.",
+        },
+      ],
+      stillOpen: 0,
+    });
+  });
+
+  test("counts a carried finding as still open when the verifier marks it a repeat of a confirmed one", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("Found again")],
+      },
+      {
+        verdicts: [
+          verdict(1, "confirmed"),
+          {
+            ...verdict(2, "duplicate"),
+            duplicateOf: 1,
+          },
+        ],
+      },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Carried")]), [prompt]);
+
+    expect(result.findings).toEqual([finding("Found again")]);
+    expect(result.rereview).toMatchObject({
+      fixed: [],
+      stillOpen: 1,
+    });
   });
 
   test("skips the merge step when a single finder has nothing to compare", async () => {

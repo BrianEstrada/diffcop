@@ -34,6 +34,8 @@ export interface ReviewSection {
 
 export interface ReviewLayout {
   headline: Headline;
+  // On a re-review, what became of the last round's findings; shown under the headline.
+  progress?: string;
   sections: ReviewSection[];
 }
 
@@ -309,6 +311,34 @@ export function reviewHeadline(findings: Finding[]): Headline {
   };
 }
 
+// Counts every finding but the description's, which is checked afresh each round and so is never "still open".
+function progressLine(findings: Finding[], rereview: Rereview | undefined) {
+  if (!rereview || rereview.fixed === undefined) {
+    return undefined;
+  }
+  const stillOpen = rereview.stillOpen ?? 0;
+  const tracked = findings.filter(({ scope }) => {
+    return scope !== "description";
+  }).length;
+  const counts: [number, string][] = [
+    [rereview.fixed.length, "fixed"],
+    [rereview.settled.length, "settled"],
+    [stillOpen, "still open"],
+    [Math.max(0, tracked - stillOpen), "new"],
+  ];
+  const parts = counts.flatMap(([count, label]) => {
+    return count > 0 ? [`${count} ${label}`] : [];
+  });
+  if (parts.length === 0) {
+    return undefined;
+  }
+  let since = "the last review";
+  if (rereview.since !== undefined) {
+    since = code(rereview.since.slice(0, 7));
+  }
+  return `Since ${since}: ${parts.join(", ")}.`;
+}
+
 export function sectionHeading({ title, count }: ReviewSection) {
   if (count === undefined) {
     return title;
@@ -346,6 +376,14 @@ export function reviewLayout(
       body: `Already wrong before this change, so not blocking it.\n\n${findingsTable(preexisting, html)}`,
     });
   }
+  const fixed = rereview?.fixed ?? [];
+  if (fixed.length > 0) {
+    sections.push({
+      title: "Fixed since the last review",
+      count: fixed.length,
+      body: droppedTable(fixed, html),
+    });
+  }
   if (dropped.length > 0) {
     sections.push({
       title: "Dropped by verification",
@@ -365,8 +403,10 @@ export function reviewLayout(
     title: "What we looked at",
     body: exploredBody(summary, explored, rereview),
   });
+  const progress = progressLine(findings, rereview);
   return {
     headline: reviewHeadline(findings),
+    ...(progress !== undefined && { progress: progress }),
     sections: sections,
   };
 }

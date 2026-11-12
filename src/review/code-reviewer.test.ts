@@ -717,7 +717,8 @@ describe("CodeReviewer on a re-review", () => {
         {
           ...finding("Raised before"),
           severity: "nit" as const,
-          status: "reported" as const,
+          status: "dropped" as const,
+          reason: "Deliberate.",
         },
       ],
     },
@@ -783,12 +784,14 @@ describe("CodeReviewer on a re-review", () => {
     });
 
     expect(agent.runs[0]?.prompt.content[0]).toContain(
-      "1.1. [reported] nit · a.ts:1-1 · Raised before",
+      "1.1. [dropped] nit · a.ts:1-1 · Raised before",
     );
     expect(reviewed.findings).toEqual([nit("On the change", 1)]);
     expect(reviewed.rereview).toEqual({
       since: "aaaaaaa",
       settled: [],
+      fixed: [],
+      stillOpen: 0,
       leftOut: 1,
     });
   });

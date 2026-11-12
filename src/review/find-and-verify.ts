@@ -10,8 +10,6 @@ import type { ReviewReporter } from "@/reporter/review-reporter";
 import {
   duplicatesSchema,
   findingsSchema,
-  NO_VERDICT,
-  preferFresh,
   removeDuplicates,
   splitByVerdict,
   verdictsSchema,
@@ -185,33 +183,37 @@ export class FindAndVerify {
       });
     });
     const fresh = kept.flat();
-    const carried = new Set(previous ? carriedFindings(previous.rounds) : []);
-    let findings = [...fresh, ...carried];
+    let findings = fresh;
     const merging: AgentResult<unknown>[] = [];
     const merged: MergedFinding[] = [];
-    const repeatable =
-      found.length > 1 || (carried.size > 0 && fresh.length > 0);
-    if (repeatable && findings.length > 1) {
+    if (found.length > 1 && findings.length > 1) {
       const deduplicated = await this.#deduplicate(
         context,
         findings,
         abortSignal,
       );
       if (deduplicated) {
-        const deduped = preferFresh(
-          removeDuplicates(findings, deduplicated.output.duplicates),
-          carried,
+        const deduped = removeDuplicates(
+          findings,
+          deduplicated.output.duplicates,
         );
         findings = deduped.kept;
         merged.push(...deduped.merged);
         merging.push(deduplicated);
       }
     }
+    // Carried findings skip the merge and get a verdict of their own: one merged into a finder's
+    // similar finding would share that finding's fate, and be called fixed when it was refuted.
+    // Grows as the verifier marks one a repeat of another in its batch, which then stands for it.
+    const carried = new Set(previous ? carriedFindings(previous.rounds) : []);
+    findings = [...findings, ...carried];
 
     const verified: AgentResult<unknown>[] = [];
     const confirmed: Finding[] = [];
     const dropped: DroppedFinding[] = [];
     const settledEarlier: SettledFinding[] = [];
+    const fixed: SettledFinding[] = [];
+    let stillOpen = 0;
     if (findings.length > 0) {
       await this.#reporter.verifying(findings.length);
       const batches = verificationBatches(findings);
@@ -237,13 +239,26 @@ export class FindAndVerify {
           batches[index] ?? [],
           result.output.verdicts,
         );
+        for (const [finding, original] of split.duplicates) {
+          if (carried.has(finding)) {
+            carried.add(original);
+          }
+        }
         confirmed.push(...split.confirmed);
-        // A refuted finding from the last round was fixed since, so it isn't listed as dropped.
-        dropped.push(
-          ...split.dropped.filter(({ finding, reason }) => {
-            return !carried.has(finding) || reason === NO_VERDICT;
-          }),
-        );
+        stillOpen += split.confirmedFrom.filter((finding) => {
+          return carried.has(finding);
+        }).length;
+        for (const judged of split.dropped) {
+          if (!carried.has(judged.finding)) {
+            dropped.push(judged);
+          } else if (split.refuted.has(judged.finding)) {
+            fixed.push(judged);
+          } else {
+            // An earlier round verified it, and no clear verdict now isn't a sign it was fixed.
+            confirmed.push(judged.finding);
+            stillOpen += 1;
+          }
+        }
         // Without earlier rounds nothing can be settled, so the verdict counts as a refutation.
         (previous ? settledEarlier : dropped).push(...split.settled);
         verified.push(result);
@@ -266,6 +281,8 @@ export class FindAndVerify {
       result.rereview = {
         ...(previous.delta && { since: previous.delta.since }),
         settled: settledEarlier,
+        fixed: fixed,
+        stillOpen: stillOpen,
         leftOut: count(reported) - count(kept),
       };
     }

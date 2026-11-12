@@ -89,20 +89,23 @@ The findings that follow were reported against the description before this edit.
 
 // Each review used to start from nothing, so later rounds re-raised what earlier
 // ones had reported, dropped or been told wasn't worth fixing.
-const REREVIEW_INSTRUCTIONS = `This change was reviewed before. <previous_rounds> lists what the earlier rounds reported, what their verifier dropped and what was settled. Don't report any of those again: spend your effort on what they missed.
-Report a "dropped" or "settled" one again only if you can cite code that contradicts the reason given for it, and a "reported" one only if the code has changed since so that it fails in a different way.`;
+const REREVIEW_INSTRUCTIONS = `This change was reviewed before. <previous_rounds> lists what the earlier rounds reported, what their verifier dropped, what was settled and what was fixed. Don't report any of those again: the ones still open are checked again without you, so spend your effort on what the earlier rounds missed.
+Report a "dropped" or "settled" one again only if you can cite code that contradicts the reason given for it, a "fixed" one only if the defect is back, and a "reported" one only if the code has changed since so that it fails in a different way.`;
 
 const REREVIEW_DELTA_INSTRUCTIONS = `<changes_since_last_review> holds what changed in these files since the last round. Look hardest there, and at what those changes break in the rest of the diff. In code that hasn't changed since, report only bugs of severity "high" or "medium".`;
 
 // The author can close a minor finding by declining it, but a bug only with a reason the code bears out.
-const VERIFIER_REREVIEW_INSTRUCTIONS = `This change was reviewed before. <previous_rounds> lists what the earlier rounds reported, what their verifier dropped and what was settled. The author's answers to them, where there are any, are beside them or in the PR description and comments.
+const VERIFIER_REREVIEW_INSTRUCTIONS = `This change was reviewed before. <previous_rounds> lists what the earlier rounds reported, what their verifier dropped, what was settled and what was fixed. The author's answers to them, where there are any, are beside them or in the PR description and comments.
+A finding with "earlierRound": true was reported by an earlier round and is still open. It's checked again here, and its lines can be the ones it had in the commit that round saw:
+- Refute it if the code no longer has the defect, and say what fixed it.
+- If the author answered it, the two rules about a declined finding below decide whether it's settled.
+- Otherwise, if the defect is still there, confirm it and give its current startLine and endLine. That it was reported before is not a reason to settle it.
 Give a finding the verdict "settled" instead of judging it again when one of these holds, and name the earlier finding or answer in the reason:
-- It repeats a finding marked "dropped" or "settled", the code it cites hasn't changed since, and it cites no code that contradicts the reason given then.
-- It repeats a finding of severity "low" or "nit" that an earlier round reported: the author has seen it.
+- It isn't marked "earlierRound", it repeats a finding marked "dropped" or "settled", the code it cites hasn't changed since, and it cites no code that contradicts the reason given then.
+- It isn't marked "earlierRound", and it repeats a finding the last round reported that isn't in this list: that one is being checked on its own. When it is in this list, mark the repeat a duplicate of it instead.
 - Its severity is "low" or "nit", and the author declined it, or the same kind of finding somewhere else, with a reason.
 - Its severity is "high" or "medium", the author declined it with a reason, and the code bears that reason out. If the code doesn't, confirm the finding and say why the reason fails.
 - It asks to undo a change that an earlier round's finding asked for.
-A finding with "earlierRound": true was reported by the last round and is checked again here, with the lines it had in the commit that round saw. Refute it if the code no longer has the defect. If it's still there, confirm it and give its current startLine and endLine.
 <changes_since_last_review> holds what changed since the last round; when it's missing, treat the code a finding cites as changed.`;
 
 const VERIFIER_PARTIAL_DIFF_INSTRUCTIONS = `The diff block holds only the changes to the files these findings cite. <changed_files> lists the whole change, and you can Read any file.`;

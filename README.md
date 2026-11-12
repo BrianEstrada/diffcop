@@ -152,8 +152,9 @@ The review opens with a headline that says what was found and how much of it:
 - ✅ **All good**: nothing found.
 
 Everything below the headline is collapsed. **Findings** lists every reported finding in one
-table, issues first. The other sections hold bugs that predate the diff, what verification dropped
-and why, what an earlier round settled, and the files the reviewer read. The last one, **Run
+table, issues first. The other sections hold bugs that predate the diff, what was fixed since the
+last review, what verification dropped and why, what an earlier round settled, and the files the
+reviewer read. The last one, **Run
 details**, has the time, tokens and cost of each run, and how the diff was split: each chunk's
 files, changed lines and findings.
 
@@ -196,15 +197,17 @@ When a change was reviewed before:
 
 - The reviewer sees what the earlier rounds reported and what verification dropped, and is told
   not to raise those again.
-- High and medium bugs from the last round are checked again, so one that's still there stays in
-  the review.
-- A finding that repeats one already dropped, or one the author declined, goes under **Settled in
-  an earlier round** instead of being reported. The author's answers are read from the PR
-  description and comments, or from an entry's `answer` in a ledger file. A low finding or a nit
-  is settled once the author has seen it. A high or medium bug is settled only when the code
-  bears out the author's reason.
-- Low findings and nits are reported only on lines that changed since the last reviewed commit.
-  The footer names that commit.
+- Every finding the last round left open is checked again, whatever its severity. One that's
+  still there stays in the review, and one the code no longer has goes under **Fixed since the
+  last review**. A line under the headline sums it up: "Since `abc1234`: 2 fixed, 11 still open,
+  1 new."
+- A finding the author declined goes under **Settled in an earlier round** instead of being
+  reported, and so does a new one that repeats a finding already dropped. The author's answers
+  are read from the PR description and comments, or from an entry's `answer` in a ledger file. A
+  low finding or a nit is settled when the author declines it with a reason. A high or medium
+  bug is settled only when the code bears out that reason.
+- New low findings and nits are reported only on lines that changed since the last reviewed
+  commit. The footer names that commit.
 - The split into chunks follows what changed since the last round, so a small fix gets one
   finder.
 

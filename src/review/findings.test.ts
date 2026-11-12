@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   findingsSchema,
   numberFindings,
-  preferFresh,
   removeDuplicates,
   splitByVerdict,
   verdictsSchema,
@@ -152,7 +151,7 @@ describe("splitByVerdict", () => {
           reason: "Fails on null.",
         },
       ]),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [finding("A"), finding("D")],
       dropped: [
         {
@@ -185,7 +184,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [],
       dropped: [
         {
@@ -235,7 +234,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [],
       dropped: [
         {
@@ -265,7 +264,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [finding("A")],
       dropped: [],
       settled: [],
@@ -321,7 +320,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [],
       dropped: [
         {
@@ -439,7 +438,7 @@ describe("splitByVerdict on a re-review", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [finding("B")],
       dropped: [],
       settled: [
@@ -542,84 +541,56 @@ describe("numberFindings on a re-review", () => {
   });
 });
 
-describe("preferFresh", () => {
-  const carried = finding("Carried");
-  const fresh = finding("Fresh");
-  const other = finding("Other");
+describe("splitByVerdict, for findings checked again", () => {
+  const still = finding("A");
+  const gone = finding("B");
+  const split = splitByVerdict(
+    [still, gone, finding("C"), finding("D")],
+    [
+      {
+        id: 1,
+        verdict: "confirmed",
+        reason: "Still there.",
+        startLine: 40,
+        endLine: 42,
+      },
+      {
+        id: 2,
+        verdict: "refuted",
+        reason: "The guard was added.",
+      },
+      {
+        id: 3,
+        verdict: "refuted",
+        reason: "Gone.",
+      },
+      {
+        id: 3,
+        verdict: "confirmed",
+        reason: "Still there.",
+      },
+    ],
+  );
 
-  test("keeps the fresh finding when it was merged into a carried one", () => {
-    expect(
-      preferFresh(
-        {
-          kept: [carried, other],
-          merged: [
-            {
-              finding: fresh,
-              into: carried,
-            },
-          ],
-        },
-        new Set([carried]),
-      ),
-    ).toEqual({
-      kept: [fresh, other],
-      merged: [
-        {
-          finding: carried,
-          into: fresh,
-        },
-      ],
-    });
+  test("keeps the finding as given beside the one with the verifier's lines", () => {
+    expect(split.confirmed).toEqual([
+      {
+        ...finding("A"),
+        startLine: 40,
+        endLine: 42,
+      },
+    ]);
+    expect(split.confirmedFrom[0]).toBe(still);
+    expect(split.confirmedFrom).toHaveLength(1);
   });
 
-  test("points every other duplicate of the carried finding at the fresh one", () => {
+  test("tells a refuted finding from one without a clear verdict", () => {
+    expect(split.refuted.has(gone)).toBe(true);
+    expect(split.refuted.size).toBe(1);
     expect(
-      preferFresh(
-        {
-          kept: [carried],
-          merged: [
-            {
-              finding: fresh,
-              into: carried,
-            },
-            {
-              finding: other,
-              into: carried,
-            },
-          ],
-        },
-        new Set([carried]),
-      ),
-    ).toEqual({
-      kept: [fresh],
-      merged: [
-        {
-          finding: carried,
-          into: fresh,
-        },
-        {
-          finding: other,
-          into: fresh,
-        },
-      ],
-    });
-  });
-
-  test("leaves merges between fresh findings, or into a fresh one, as they are", () => {
-    const deduped = {
-      kept: [fresh],
-      merged: [
-        {
-          finding: other,
-          into: fresh,
-        },
-        {
-          finding: carried,
-          into: fresh,
-        },
-      ],
-    };
-
-    expect(preferFresh(deduped, new Set([carried]))).toEqual(deduped);
+      split.dropped.map(({ finding: dropped }) => {
+        return dropped.title;
+      }),
+    ).toEqual(["B", "C", "D"]);
   });
 });
