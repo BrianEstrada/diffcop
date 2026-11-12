@@ -45,6 +45,7 @@ describe("readPullRequestContext", () => {
       repo: "owner/repo",
       number: 7,
       headSha: "abc1234def",
+      baseRef: "main",
       title: "Add a thing",
       body: "Why it's needed",
       action: "synchronize",

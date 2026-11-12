@@ -588,6 +588,21 @@ describe("ReviewCommentFormatter memory", () => {
     );
   });
 
+  test("saves the base the review's diff was against", () => {
+    const formatter = new ReviewCommentFormatter({
+      ...pr,
+      baseRef: "release",
+    });
+
+    expect(readSavedReview(formatter.review(review([])))?.baseRef).toBe(
+      "release",
+    );
+    expect(
+      readSavedReview(new ReviewCommentFormatter(pr).review(review([])))
+        ?.baseRef,
+    ).toBeUndefined();
+  });
+
   test("says in the footer which commit a re-review focused on changes since", () => {
     const body = new ReviewCommentFormatter(pr).review({
       ...review([]),

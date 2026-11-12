@@ -80,6 +80,7 @@ export class ReviewCommentFormatter {
     return this.savedReview({
       version: 1,
       headSha: this.#pr.headSha,
+      ...(this.#pr.baseRef !== undefined && { baseRef: this.#pr.baseRef }),
       descriptionAt: this.#pr.triggerTime,
       warnings: [...this.#warnings],
       result: result,

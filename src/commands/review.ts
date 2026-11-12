@@ -15,7 +15,10 @@ import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
 import { CommitStatus } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
-import { ledgerFromComments } from "@/reporter/github/ledger-marker";
+import {
+  lastReview,
+  ledgerFromComments,
+} from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
 import { ReviewComments } from "@/reporter/github/review-comments";
 import type { ReviewReporter } from "@/reporter/review-reporter";
@@ -28,6 +31,7 @@ import {
 import { DescriptionRechecker } from "@/review/description-rechecker";
 import type { RecheckOutcome } from "@/review/description-rechecker";
 import { FindAndVerify } from "@/review/find-and-verify";
+import { outstandingWork } from "@/review/outstanding-work";
 import { LedgerFile } from "@/review/ledger-file";
 import { appendRound, earlierRounds } from "@/review/review-ledger";
 import type { ReviewLedger } from "@/review/review-ledger";
@@ -130,18 +134,6 @@ function createLocalReporter(
     case "json":
       return new JsonReporter(process.stdout);
   }
-}
-
-// What earlier reviews of this change found: from diffcop's comments on the PR,
-// each of which keeps its own round, or from the --ledger file of a local run.
-async function loadLedger(
-  githubComment: GitHubComment | undefined,
-  ledgerFile: LedgerFile | undefined,
-): Promise<ReviewLedger | undefined> {
-  if (!githubComment) {
-    return ledgerFile?.load();
-  }
-  return ledgerFromComments(await githubComment.comment.readAll());
 }
 
 function recheckLine(outcome: RecheckOutcome) {
@@ -312,16 +304,38 @@ export default defineCommand({
       process.stderr.write(`${recheckLine(outcome)}\n`);
     }
 
-    if (args.reporter === "github" && pr?.descriptionEdited) {
-      await recheckDescription(pr, collector);
-      return;
-    }
-
     let ledgerFile: LedgerFile | undefined;
     if (args.ledger !== undefined) {
       ledgerFile = new LedgerFile(args.ledger);
     }
-    const ledger = await loadLedger(githubComment, ledgerFile);
+    // What earlier reviews of this change found: from diffcop's comments on the PR,
+    // each of which keeps its own round, or from the --ledger file of a local run.
+    let ledger: ReviewLedger | undefined;
+    let full = args.full === true;
+    if (githubComment && pr) {
+      const comments = await githubComment.comment.readAll();
+      const edited = pr.action === "edited";
+      const work = outstandingWork(
+        {
+          headSha: pr.headSha,
+          baseRef: pr.baseRef,
+          edited: edited,
+          baseChanged: edited && !pr.descriptionEdited,
+        },
+        lastReview(comments.at(-1)),
+      );
+      if (work.kind === "recheck") {
+        await recheckDescription(pr, collector);
+        return;
+      }
+      if (work.reason !== undefined) {
+        process.stderr.write(`${work.reason}\n`);
+      }
+      full ||= work.full;
+      ledger = ledgerFromComments(comments);
+    } else {
+      ledger = await ledgerFile?.load();
+    }
     // A round is keyed by its commit, so reviewing one again redoes its round.
     let headSha = pr?.headSha;
     if (headSha === undefined && ledgerFile) {
@@ -340,8 +354,7 @@ export default defineCommand({
       base: args.base,
       maxChunks: maxChunks,
       rounds: headSha === undefined ? [] : earlierRounds(ledger, headSha),
-      // A description edit returned above, so an edit here is a new base, which changes the diff.
-      full: args.full === true || pr?.action === "edited",
+      full: full,
       abortSignal: abort.signal,
     });
     if (ledgerFile && headSha !== undefined) {

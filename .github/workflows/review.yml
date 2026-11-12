@@ -8,8 +8,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
 concurrency:
-  # Title and body edits get a group of their own, so a re-check can't cancel a review of the code.
-  group: review-${{ github.event.pull_request.number }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
+  # One group per PR: a run that cancels another picks up whatever that one hadn't finished.
+  group: review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
