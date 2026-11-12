@@ -79,15 +79,20 @@ export class CommitStatus {
         ...(target && { target_url: target }),
       });
     } catch (error) {
-      if (error instanceof RequestError && error.status === 403) {
+      if (error instanceof RequestError && lacksPermission(error)) {
         // Said once, not for every update of the run.
         this.#denied = true;
         this.#log.write(
-          `Skipping the diffcop status: GitHub refused it (${error.message}). The workflow's permissions need \`statuses: write\`.\n`,
+          "Skipping the diffcop status: the token can't post one. The workflow's permissions need `statuses: write`.\n",
         );
         return;
       }
       this.#log.write(`Couldn't post the diffcop status: ${String(error)}\n`);
     }
   }
+}
+
+// GitHub also answers a rate limit with 403, which the next update may get past.
+function lacksPermission({ status, message }: RequestError) {
+  return status === 403 && /not accessible/i.test(message);
 }

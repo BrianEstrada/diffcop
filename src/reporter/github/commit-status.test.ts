@@ -159,8 +159,30 @@ describe("CommitStatus", () => {
 
     expect(calls).toHaveLength(1);
     expect(log.text).toBe(
-      "Skipping the diffcop status: GitHub refused it (Resource not accessible by integration). The workflow's permissions need `statuses: write`.\n",
+      "Skipping the diffcop status: the token can't post one. The workflow's permissions need `statuses: write`.\n",
     );
+  });
+
+  test("keeps trying after a 403 that isn't about permissions", async () => {
+    const { status, calls, log } = createStatus(() => {
+      return Response.json(
+        { message: "You have exceeded a secondary rate limit." },
+        { status: 403 },
+      );
+    });
+
+    await status.post({
+      state: "pending",
+      description: "Reviewing…",
+    });
+    await status.post({
+      state: "success",
+      description: "All good",
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(log.text).toContain("Couldn't post the diffcop status:");
+    expect(log.text).not.toContain("statuses: write");
   });
 
   test("logs any other failure instead of throwing, and tries again next time", async () => {
