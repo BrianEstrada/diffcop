@@ -5,6 +5,7 @@ import {
   reviewLedgerSchema,
 } from "@/review/review-ledger";
 import type { ReviewLedger } from "@/review/review-ledger";
+import type { LastReview } from "@/review/outstanding-work";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
 import { trailingMarker } from "@/reporter/github/trailing-marker";
 
@@ -54,6 +55,23 @@ export function ledgerFromComments(bodies: string[]) {
     }
   }
   return ledger;
+}
+
+// The finished review a comment holds, if it holds one. A review too long to save
+// still names its commit in the round it left.
+export function lastReview(body: string | undefined): LastReview | undefined {
+  if (body === undefined) {
+    return undefined;
+  }
+  const saved = readSavedReview(body);
+  if (saved) {
+    return {
+      headSha: saved.headSha,
+      baseRef: saved.baseRef,
+    };
+  }
+  const round = readLedger(body)?.rounds.at(-1);
+  return round && { headSha: round.headSha };
 }
 
 export function holdsReview(body: string) {

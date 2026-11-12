@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   holdsReview,
+  lastReview,
   ledgerFromComments,
   ledgerMarker,
   readLedger,
@@ -308,6 +309,35 @@ describe("markers quoted in a review", () => {
 
     expect(holdsReview(body)).toBe(false);
     expect(ledgerFromComments([body])).toBeUndefined();
+  });
+});
+
+describe("lastReview", () => {
+  test("names the commit and base of the review a comment saved", () => {
+    const saved = {
+      ...savedReview("aaaaaaa", "First"),
+      baseRef: "main",
+    };
+
+    expect(
+      lastReview(`## diffcop review\n${savedReviewMarker(saved, [])}`),
+    ).toEqual({
+      headSha: "aaaaaaa",
+      baseRef: "main",
+    });
+  });
+
+  test("names the commit of a review that was too long to save", () => {
+    const roundOnly = ledgerMarker(ledger, [], ROOMY);
+
+    expect(lastReview(`## diffcop review\n${roundOnly}`)).toEqual({
+      headSha: "bbbbbbb",
+    });
+  });
+
+  test("is undefined for a failure, and on a PR without a comment", () => {
+    expect(lastReview("## diffcop review\n\n❌ failed")).toBeUndefined();
+    expect(lastReview(undefined)).toBeUndefined();
   });
 });
 

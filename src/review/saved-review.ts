@@ -85,6 +85,8 @@ export function summarizeFinders(finders: FinderRun[]): FinderSummary[] {
 export const savedReviewSchema = z.object({
   version: z.literal(1),
   headSha: z.string(),
+  // The branch the review's diff was against. Absent from a review saved before this was kept.
+  baseRef: z.string().optional(),
   // The event time of the description the findings were checked against.
   descriptionAt: z.string().optional(),
   warnings: z.array(z.string()),

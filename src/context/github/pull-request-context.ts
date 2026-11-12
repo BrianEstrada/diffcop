@@ -5,6 +5,8 @@ export interface PullRequestContext {
   repo: string;
   number: number;
   headSha: string;
+  // The branch the PR merges into. A review of the same commit against another base is of another diff.
+  baseRef?: string;
   // Title and body as of the event, so edits made after it can't reach the prompt.
   title: string;
   body: string;
@@ -28,6 +30,7 @@ const pullRequestEvent = z.object({
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
     head: z.object({ sha: z.string() }),
+    base: z.object({ ref: z.string() }).optional(),
   }),
 });
 
@@ -80,6 +83,7 @@ export async function readPullRequestContext(
     repo: GITHUB_REPOSITORY,
     number: pullRequest.number,
     headSha: pullRequest.head.sha,
+    baseRef: pullRequest.base?.ref,
     title: pullRequest.title,
     body: pullRequest.body ?? "",
     action: action,

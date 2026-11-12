@@ -78,8 +78,8 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
 concurrency:
-  # Title and body edits get a group of their own, so a re-check can't cancel a review of the code.
-  group: review-${{ github.event.pull_request.number }}${{ github.event.action == 'edited' && !github.event.changes.base && '-edit' || '' }}
+  # One group per PR: a run that cancels another picks up whatever that one hadn't finished.
+  group: review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -174,11 +174,16 @@ status covers both. A review that fails posts the error, after that commit's rev
 On a PR, the reviewer also sees the title, description, labels, comments and reviews, sanitized
 before they reach the prompt. It treats the description as the author's claims, not as proof.
 
-Editing only the title or description doesn't review the code again. If the last review found
-that the description doesn't match the diff, diffcop re-checks just the description and updates
-those findings in the comment, keeping the rest of the review. Otherwise it stops without calling
-the model. An edit made while a review is running gets the same treatment when that review
-finishes. A retargeted base, or a push, still reviews the code.
+Editing only the title or description doesn't review the code again once the head commit has its
+review. If that review found that the description doesn't match the diff, diffcop re-checks just
+the description and updates those findings in the comment, keeping the rest of the review.
+Otherwise it stops without calling the model. A retargeted base, or a push, still reviews the code.
+
+diffcop decides this from what it last reviewed, not from which event started the run. An edit
+that cancels a running review therefore reviews the code itself, because the commit has no
+finished review yet, and a commit whose review failed is reviewed again on the next edit. This is
+why the workflow keeps one concurrency group per PR: with a group of their own, edits made during a
+review would start a second review of the same commit.
 
 ### Reviewing a change again
 
