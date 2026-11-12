@@ -4,6 +4,7 @@ import type { PullRequestContext } from "@/context/github/pull-request-context";
 import type { ReviewResult } from "@/review/findings";
 import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
 import { GitHubClient } from "@/github/github-client";
+import type { StatusUpdate } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
 import type { GitHubReporterOptions } from "@/reporter/github/github-reporter";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
@@ -29,6 +30,8 @@ class BufferSink implements TextSink {
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+const COMMENT_URL = "https://github.test/owner/repo/pull/7#issuecomment-500";
+
 const commentWrite = z.object({ body: z.string() });
 
 function fakeGitHub({ claimedBy = "41", failWrites = false } = {}) {
@@ -43,6 +46,7 @@ function fakeGitHub({ claimedBy = "41", failWrites = false } = {}) {
       return Response.json([
         {
           id: 500,
+          html_url: COMMENT_URL,
           user: { login: "github-actions[bot]" },
           body: `<!-- diffcop:review -->\n<!-- diffcop:run=${claimedBy} -->`,
         },
@@ -80,6 +84,7 @@ function createReporter(
   options: GitHubReporterOptions = {},
 ) {
   const log = new BufferSink();
+  const statuses: StatusUpdate[] = [];
   const reporter: ReviewReporter = new GitHubReporter(
     new StickyComment(
       pr,
@@ -90,12 +95,18 @@ function createReporter(
       }),
     ),
     new ReviewCommentFormatter(pr, { secrets: secrets }),
+    {
+      post: async (update) => {
+        statuses.push(update);
+      },
+    },
     log,
     options,
   );
   return {
     reporter: reporter,
     log: log,
+    statuses: statuses,
   };
 }
 
@@ -229,5 +240,111 @@ describe("GitHubReporter", () => {
     await reporter.failed(new Error("boom"), { cancelled: false });
 
     expect(log.text).toStartWith("Couldn't update the diffcop comment:");
+  });
+
+  test("started marks the commit as being reviewed", async () => {
+    const { fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.started();
+
+    expect(statuses).toEqual([
+      {
+        state: "pending",
+        description: "Reviewing…",
+      },
+    ]);
+  });
+
+  test("a warning doesn't post the pending status again", async () => {
+    const { fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.started();
+    await reporter.warning("This change is large.");
+
+    expect(statuses).toHaveLength(1);
+  });
+
+  test("completed passes the commit and links to the comment", async () => {
+    const { fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.completed(result);
+
+    expect(statuses).toEqual([
+      {
+        state: "success",
+        description: "All good",
+        url: COMMENT_URL,
+      },
+    ]);
+  });
+
+  test("completed fails the commit when the review found an issue", async () => {
+    const { fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.completed({
+      ...result,
+      findings: [
+        {
+          file: "a.ts",
+          startLine: 1,
+          endLine: 1,
+          severity: "high",
+          scope: "introduced",
+          title: "Drops the last page",
+          explanation: "Off by one.",
+        },
+      ],
+    });
+
+    expect(statuses).toMatchObject([
+      {
+        state: "failure",
+        description: "1 issue found",
+      },
+    ]);
+  });
+
+  test("failed marks the commit as errored", async () => {
+    const { fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.failed(new Error("boom"), { cancelled: false });
+    await reporter.failed(new Error("aborted"), { cancelled: true });
+
+    expect(statuses).toEqual([
+      {
+        state: "error",
+        description: "The review failed",
+      },
+      {
+        state: "error",
+        description: "The review was cancelled",
+      },
+    ]);
+  });
+
+  test("still marks the commit when the comment can't be updated", async () => {
+    const { fetch } = fakeGitHub({ failWrites: true });
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.started();
+    await reporter.failed(new Error("boom"), { cancelled: false });
+
+    expect(statuses).toMatchObject([{ state: "pending" }, { state: "error" }]);
+  });
+
+  test("leaves the status to a newer run that has taken over the comment", async () => {
+    const { fetch } = fakeGitHub({ claimedBy: "43" });
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.started();
+    await reporter.completed(result);
+    await reporter.failed(new Error("boom"), { cancelled: false });
+
+    expect(statuses).toEqual([]);
   });
 });

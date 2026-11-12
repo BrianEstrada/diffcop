@@ -13,6 +13,7 @@ import { ReviewPromptBuilder } from "@/prompt/review-prompt-builder";
 import { ConsoleReporter } from "@/reporter/console/console-reporter";
 import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
+import { CommitStatus } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
 import { readLedger } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
@@ -103,6 +104,7 @@ function createGitHubComment(
   }
   return {
     comment: new StickyComment(pr, github),
+    status: new CommitStatus(pr, github, process.stderr),
     formatter: new ReviewCommentFormatter(pr, {
       secrets: [
         process.env.GITHUB_TOKEN,
@@ -255,6 +257,7 @@ export default defineCommand({
       reporter = new GitHubReporter(
         githubComment.comment,
         githubComment.formatter,
+        githubComment.status,
         process.stderr,
         { debug: args.debug === true },
       );
@@ -283,17 +286,20 @@ export default defineCommand({
       abort.abort();
     });
 
-    // Never posts a status: a failed or cancelled re-check leaves the last review showing.
+    // Never reports a failure: a failed or cancelled re-check leaves the last review and its status showing.
     async function recheckDescription(
       edited: PullRequestContext,
       editedCollector: ReviewContextCollector,
     ) {
-      const { comment, formatter } = createGitHubComment(edited, github);
+      const { comment, formatter, status } = createGitHubComment(
+        edited,
+        github,
+      );
       const rechecker = new DescriptionRechecker(
         editedCollector,
         promptBuilder,
         new FindAndVerify(promptBuilder, agent, reporter),
-        new SavedReviewComment(comment, formatter),
+        new SavedReviewComment(comment, formatter, status),
       );
       const outcome = await rechecker.recheck(
         {

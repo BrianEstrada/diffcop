@@ -84,6 +84,7 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  statuses: write # for the diffcop status; leave it out and the review still posts
 
 jobs:
   review:
@@ -112,7 +113,7 @@ jobs:
 | ------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------- |
 | `anthropic-api-key`       |                                                                      | Set this or `claude-code-oauth-token`.                |
 | `claude-code-oauth-token` |                                                                      | From `claude setup-token`, for Claude subscriptions.  |
-| `github-token`            | `github.token`                                                       | Reads the PR and posts the comment.                   |
+| `github-token`            | `github.token`                                                       | Reads the PR, posts the comment and the status.       |
 | `prompt`                  | Review this pull request for bugs, security issues, and regressions. | What to ask the reviewer.                             |
 | `effort`                  | `high`                                                               | `low` to `max`. Empty uses Claude Code's default.     |
 | `max-chunks`              | `4`                                                                  | `1` to `4`. Above 1, a large first review is split.   |
@@ -148,6 +149,13 @@ The review opens with one headline:
 - 🟡 **Description doesn't match the diff**: the PR claims something the code doesn't do.
 - 🟡 **Only nits**: nothing serious.
 - ✅ **All good**: nothing found.
+
+The headline is also posted as a commit status named `diffcop` on the PR's head commit, linking to
+the comment. It's pending while the review runs, then green for **All good** and **Only nits**, and
+red for issues or a description mismatch. A review that fails or is cancelled marks it as errored. It
+only blocks merging if you make `diffcop` a required status check; then a PR the workflow skips,
+such as a draft or one from a fork, waits for a status that never comes. The status needs
+`statuses: write`; without it diffcop says so in the log and posts the comment alone.
 
 Below it, collapsible sections list the findings, bugs that predate the diff, what verification
 dropped and why, what an earlier round settled, and the files the reviewer read. The last one,
