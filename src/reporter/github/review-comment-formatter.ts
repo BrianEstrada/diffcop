@@ -21,11 +21,11 @@ const MAX_MEMORY_CHARS = 20_000;
 const TRUNCATED = "_Review truncated; see the job log for the rest._";
 const BLOCK_GAP = "\n\n";
 
+// Every section is collapsed: the headline and the diffcop status carry the verdict.
 // Blank lines inside <details> let GitHub render the body as markdown.
 function details(section: ReviewSection, body: string) {
-  const tag = section.open ? "<details open>" : "<details>";
   return [
-    `${tag}<summary><b>${sectionHeading(section)}</b></summary>`,
+    `<details><summary><b>${sectionHeading(section)}</b></summary>`,
     "",
     body,
     "",

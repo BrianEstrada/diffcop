@@ -213,11 +213,14 @@ describe("reviewStatus", () => {
     });
   });
 
-  test("passes a review with only nits", () => {
-    const findings = [finding({ severity: "nit" })];
+  test("passes a review with only minor findings", () => {
+    const findings = [
+      finding({ severity: "nit" }),
+      finding({ severity: "low" }),
+    ];
     expect(reviewStatus({ findings: findings })).toMatchObject({
       state: "success",
-      description: "Only nits",
+      description: "2 minor findings",
     });
   });
 

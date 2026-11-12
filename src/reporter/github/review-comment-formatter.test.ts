@@ -111,21 +111,14 @@ describe("ReviewCommentFormatter.review", () => {
       [
         "## diffcop review",
         "",
-        "🔴 **1 issue found**",
+        "🔴 **1 issue, 1 minor finding**",
         "",
-        "<details open><summary><b>Issues (1)</b></summary>",
+        "<details><summary><b>Findings (2)</b></summary>",
         "",
         "| Severity | Location | Issue |",
         "| --- | --- | --- |",
         "| **High** | `src/a.ts:10-12` | **A high bug**<br>Throws on []. |",
-        "",
-        "</details>",
-        "",
-        "<details><summary><b>Nits (1)</b></summary>",
-        "",
-        "| Severity | Location | Issue |",
-        "| --- | --- | --- |",
-        "| **Nit** | `src/a.ts:10-12` | **A nit bug**<br>Rename it. |",
+        "| **Minor** | `src/a.ts:10-12` | **A nit bug**<br>Rename it. |",
         "",
         "</details>",
         "",
@@ -143,7 +136,7 @@ describe("ReviewCommentFormatter.review", () => {
         "",
         "| Severity | Location | Issue | Verifier |",
         "| --- | --- | --- | --- |",
-        "| **Low** | `src/a.ts:10-12` | **A low bug**<br>Minor. | Guarded by the caller. |",
+        "| **Minor** | `src/a.ts:10-12` | **A low bug**<br>Minor. | Guarded by the caller. |",
         "",
         "</details>",
         "",
@@ -173,10 +166,10 @@ describe("ReviewCommentFormatter.review", () => {
     );
   });
 
-  test("says only nits or all good when there are no issues", () => {
+  test("counts the minor findings, or says all good, when there are no issues", () => {
     const formatter = new ReviewCommentFormatter(pr);
     expect(formatter.review(review([finding("low", "Minor.")]))).toContain(
-      "\n🟡 **Only nits**\n\n<details><summary><b>Nits (1)</b></summary>",
+      "\n🟡 **1 minor finding**\n\n<details><summary><b>Findings (1)</b></summary>",
     );
     expect(formatter.review(review([]))).toStartWith(
       "## diffcop review\n\n✅ **All good**\n\n<details><summary><b>What we looked at</b></summary>",
