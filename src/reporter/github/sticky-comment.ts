@@ -14,9 +14,12 @@ const issueComments = z.array(
   z.object({
     id: z.number(),
     body: z.string().optional(),
+    html_url: z.string().optional(),
     user: z.object({ login: z.string() }).nullable(),
   }),
 );
+
+const createdComment = z.object({ html_url: z.string() });
 
 const viewerQuery = z.object({ viewer: z.object({ login: z.string() }) });
 
@@ -49,6 +52,7 @@ export class StickyComment {
   readonly #pr: PullRequestContext;
   readonly #github: GitHubClient;
   #login: Promise<string> | undefined;
+  #url: string | undefined;
 
   constructor(pr: PullRequestContext, github: GitHubClient) {
     this.#pr = pr;
@@ -57,6 +61,11 @@ export class StickyComment {
 
   get location() {
     return `${this.#pr.repo}#${this.#pr.number}`;
+  }
+
+  // The comment's page, once a read or a write has seen it.
+  get url() {
+    return this.#url;
   }
 
   // With `onlyIfOwned`, skips the write and returns false if a newer run has
@@ -138,7 +147,7 @@ export class StickyComment {
       return true;
     }
     try {
-      await this.#github.request(
+      const created = await this.#github.request(
         "POST /repos/{owner}/{repo}/issues/{issue_number}/comments",
         {
           ...this.#repo(),
@@ -149,6 +158,7 @@ export class StickyComment {
           request: { retries: 0 },
         },
       );
+      this.#url = createdComment.safeParse(created.data).data?.html_url;
     } catch (error) {
       if (
         attempt > CREATE_RETRIES ||
@@ -183,6 +193,7 @@ export class StickyComment {
         return c.user?.login === login && c.body?.includes(MARKER);
       });
       if (match) {
+        this.#url = match.html_url;
         return match;
       }
     }

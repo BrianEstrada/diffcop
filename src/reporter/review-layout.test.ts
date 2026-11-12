@@ -91,6 +91,7 @@ describe("reviewLayout headline", () => {
     expect(layout([high, medium, low, nit]).headline).toEqual({
       icon: "🔴",
       text: "2 issues found",
+      blocking: true,
     });
     expect(layout([medium]).headline.text).toBe("1 issue found");
   });
@@ -99,6 +100,7 @@ describe("reviewLayout headline", () => {
     expect(layout([low]).headline).toEqual({
       icon: "🟡",
       text: "Only nits",
+      blocking: false,
     });
     expect(layout([nit, old]).headline.text).toBe("Only nits");
   });
@@ -107,6 +109,7 @@ describe("reviewLayout headline", () => {
     expect(layout([mismatch, nit]).headline).toEqual({
       icon: "🟡",
       text: "Description doesn't match the diff",
+      blocking: true,
     });
     expect(layout([mismatch, high]).headline.text).toBe("1 issue found");
   });
@@ -115,6 +118,7 @@ describe("reviewLayout headline", () => {
     expect(layout([]).headline).toEqual({
       icon: "✅",
       text: "All good",
+      blocking: false,
     });
     expect(layout([old]).headline.text).toBe("All good");
   });

@@ -5,18 +5,25 @@ import type { ReviewCommentFormatter } from "@/reporter/github/review-comment-fo
 import { readLedger } from "@/reporter/github/ledger-marker";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
 import type { StickyComment } from "@/reporter/github/sticky-comment";
+import { reviewStatus } from "@/reporter/github/commit-status";
+import type { CommitStatus } from "@/reporter/github/commit-status";
+
+type Comment = Pick<StickyComment, "read" | "rewrite" | "url">;
 
 // Keeps the saved review in the sticky comment it renders.
 export class SavedReviewComment implements SavedReviewStore {
-  readonly #comment: Pick<StickyComment, "read" | "rewrite">;
+  readonly #comment: Comment;
   readonly #formatter: ReviewCommentFormatter;
+  readonly #status: Pick<CommitStatus, "post">;
 
   constructor(
-    comment: Pick<StickyComment, "read" | "rewrite">,
+    comment: Comment,
     formatter: ReviewCommentFormatter,
+    status: Pick<CommitStatus, "post">,
   ) {
     this.#comment = comment;
     this.#formatter = formatter;
+    this.#status = status;
   }
 
   async load() {
@@ -29,17 +36,26 @@ export class SavedReviewComment implements SavedReviewStore {
     update: (current: SavedReview) => SavedReview | undefined,
     recheck: RunStats,
   ) {
-    return this.#comment.rewrite((body) => {
+    let rewritten: SavedReview | undefined;
+    const written = await this.#comment.rewrite((body) => {
       const current = readSavedReview(body);
       const updated = current && update(current);
       if (!updated) {
         return undefined;
       }
+      rewritten = updated;
       // A re-check changes only description findings, which the ledger doesn't hold.
       return this.#formatter.savedReview(updated, {
         recheck: recheck,
         ledger: readLedger(body),
       });
     });
+    // A description finding can be what turned the status red, so it follows the comment.
+    if (written && rewritten) {
+      await this.#status.post(
+        reviewStatus(rewritten.result, this.#comment.url),
+      );
+    }
+    return written;
   }
 }

@@ -20,6 +20,8 @@ const MAX_LISTED = 30;
 export interface Headline {
   icon: string;
   text: string;
+  // Whether the PR's status check should fail on it.
+  blocking: boolean;
 }
 
 export interface ReviewSection {
@@ -263,6 +265,7 @@ const GROUP_LAYOUTS: GroupLayout[] = [
       return {
         icon: "🔴",
         text: `${plural(count, "issue")} found`,
+        blocking: true,
       };
     },
   },
@@ -274,6 +277,7 @@ const GROUP_LAYOUTS: GroupLayout[] = [
       return {
         icon: "🟡",
         text: "Description doesn't match the diff",
+        blocking: true,
       };
     },
   },
@@ -285,6 +289,7 @@ const GROUP_LAYOUTS: GroupLayout[] = [
       return {
         icon: "🟡",
         text: "Only nits",
+        blocking: false,
       };
     },
   },
@@ -323,7 +328,25 @@ function headline(groups: GroupedFindings[]): Headline {
   return {
     icon: "✅",
     text: "All good",
+    blocking: false,
   };
+}
+
+function groupFindings(findings: Finding[]): GroupedFindings[] {
+  return GROUP_LAYOUTS.map((layout) => {
+    return {
+      layout: layout,
+      findings: findings.filter((f) => {
+        return findingGroup(f) === layout.group;
+      }),
+    };
+  }).filter((group) => {
+    return group.findings.length > 0;
+  });
+}
+
+export function reviewHeadline(findings: Finding[]) {
+  return headline(groupFindings(findings));
 }
 
 export function sectionHeading({ title, count }: ReviewSection) {
@@ -346,16 +369,7 @@ export function reviewLayout(
   >,
   { html = true }: LayoutOptions = {},
 ): ReviewLayout {
-  const groups = GROUP_LAYOUTS.map((layout) => {
-    return {
-      layout: layout,
-      findings: findings.filter((f) => {
-        return findingGroup(f) === layout.group;
-      }),
-    };
-  }).filter((group) => {
-    return group.findings.length > 0;
-  });
+  const groups = groupFindings(findings);
   const sections: ReviewSection[] = groups.map((group) => {
     return groupSection(group, html);
   });

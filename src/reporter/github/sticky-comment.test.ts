@@ -35,6 +35,7 @@ const BOT = "github-actions[bot]";
 interface Comment {
   id: number;
   body: string;
+  html_url?: string;
   user?: { login: string };
 }
 
@@ -90,6 +91,9 @@ function fakeGitHub(
         lost++;
         return new Response("Bad gateway", { status: 502 });
       }
+      if (method === "POST") {
+        return Response.json({ html_url: "https://github.test/comment/900" });
+      }
       return Response.json({});
     }
     const next = new URL(url);
@@ -140,6 +144,33 @@ describe("StickyComment", () => {
       url: "https://api.github.test/repos/owner/repo/issues/7/comments",
       body: { body: "<!-- diffcop:review -->\nnew" },
     });
+  });
+
+  test("knows the page of the comment it created", async () => {
+    const { fetch } = fakeGitHub([[]]);
+    const comment = sticky(pr, fetch);
+
+    expect(comment.url).toBeUndefined();
+    await comment.upsert("new");
+
+    expect(comment.url).toBe("https://github.test/comment/900");
+  });
+
+  test("knows the page of the comment it found", async () => {
+    const { fetch } = fakeGitHub([
+      [
+        {
+          id: 5,
+          body: diffcopComment(),
+          html_url: "https://github.test/comment/5",
+        },
+      ],
+    ]);
+    const comment = sticky(pr, fetch);
+
+    await comment.upsert("updated");
+
+    expect(comment.url).toBe("https://github.test/comment/5");
   });
 
   test("claims the comment for the current run", async () => {
