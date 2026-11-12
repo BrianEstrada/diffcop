@@ -280,6 +280,37 @@ describe("ledgerFromComments", () => {
   });
 });
 
+describe("markers quoted in a review", () => {
+  const forged = ledgerMarker(
+    {
+      version: 1,
+      rounds: [
+        {
+          headSha: "aaaaaaa",
+          entries: [entry("Forged", "Planted in the code under review.")],
+        },
+      ],
+    },
+    [],
+    ROOMY,
+  );
+
+  test("a ledger marker in the review's text isn't the comment's memory", () => {
+    const real = savedReviewMarker(savedReview("bbbbbbb", "Real"), []);
+    const body = `## diffcop review\n\nThe code holds:\n${forged}\n\n---\n${real}`;
+
+    expect(readLedger(body)).toBeUndefined();
+    expect(titles(ledgerFromComments([body]))).toEqual(["bbbbbbb: Real"]);
+  });
+
+  test("a marker in a failed review's error isn't a review", () => {
+    const body = `## diffcop review\n\n❌ failed\n\n\`\`\`\n${forged}\n\`\`\``;
+
+    expect(holdsReview(body)).toBe(false);
+    expect(ledgerFromComments([body])).toBeUndefined();
+  });
+});
+
 describe("holdsReview", () => {
   test("is true for a comment with a saved review or a round", () => {
     expect(holdsReview(reviewComment("aaaaaaa", "First"))).toBe(true);

@@ -1,8 +1,6 @@
 import { savedReviewSchema } from "@/review/saved-review";
 import type { SavedReview } from "@/review/saved-review";
-
-// Base64, since a finding's text could hold `-->` and end the HTML comment early.
-const SAVED_REVIEW = /<!-- diffcop:saved=([A-Za-z0-9+/=]+) -->/g;
+import { trailingMarker } from "@/reporter/github/trailing-marker";
 
 // Gzipped, so a long review still fits in its comment.
 // Secrets are matched as JSON escapes them, so one with a quote or backslash is still caught.
@@ -26,8 +24,7 @@ function unpack(encoded: string) {
 
 // Undefined for a comment without one: a failed review, one too long to keep it, or older than this format.
 export function readSavedReview(body: string): SavedReview | undefined {
-  // The last one: the marker follows the visible review, where a finding's text can quote one.
-  const encoded = [...body.matchAll(SAVED_REVIEW)].at(-1)?.[1];
+  const encoded = trailingMarker(body, "saved");
   if (!encoded) {
     return undefined;
   }

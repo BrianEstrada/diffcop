@@ -6,11 +6,10 @@ import {
 } from "@/review/review-ledger";
 import type { ReviewLedger } from "@/review/review-ledger";
 import { readSavedReview } from "@/reporter/github/saved-review-marker";
+import { trailingMarker } from "@/reporter/github/trailing-marker";
 
-// A comment keeps its round in its saved review. This marker holds the round instead when the saved
-// review is too long to keep, and every round so far in a comment from when diffcop kept only one.
-const LEDGER = /<!-- diffcop:ledger=([A-Za-z0-9+/=]+) -->/g;
-
+// A comment keeps its round in its saved review. The ledger marker holds the round instead when the
+// saved review is too long to keep, and every round so far in a comment from when diffcop kept only one.
 // Secrets are matched as JSON escapes them, so one with a quote or backslash is still caught.
 function encode(ledger: ReviewLedger, secrets: string[]) {
   let json = JSON.stringify(ledger);
@@ -63,8 +62,7 @@ export function holdsReview(body: string) {
 
 // Undefined for a comment without one.
 export function readLedger(body: string): ReviewLedger | undefined {
-  // The last one: the marker follows the visible review, where a finding's text can quote one.
-  const encoded = [...body.matchAll(LEDGER)].at(-1)?.[1];
+  const encoded = trailingMarker(body, "ledger");
   if (!encoded) {
     return undefined;
   }
