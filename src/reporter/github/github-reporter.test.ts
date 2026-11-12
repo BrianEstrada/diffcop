@@ -8,7 +8,7 @@ import type { StatusUpdate } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
 import type { GitHubReporterOptions } from "@/reporter/github/github-reporter";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
-import { StickyComment } from "@/reporter/github/sticky-comment";
+import { ReviewComments } from "@/reporter/github/review-comments";
 
 const pr: PullRequestContext = {
   apiUrl: "https://api.github.test",
@@ -20,6 +20,8 @@ const pr: PullRequestContext = {
   runId: "42",
 };
 
+const EARLIER_COMMIT = "0000000aaa";
+
 class BufferSink implements TextSink {
   text = "";
 
@@ -30,39 +32,20 @@ class BufferSink implements TextSink {
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-const COMMENT_URL = "https://github.test/owner/repo/pull/7#issuecomment-500";
+const EARLIER_URL = "https://github.test/owner/repo/pull/7#issuecomment-500";
+const NEW_URL = "https://github.test/owner/repo/pull/7#issuecomment-900";
 
 const commentWrite = z.object({ body: z.string() });
 
-function fakeGitHub({ claimedBy = "41", failWrites = false } = {}) {
-  const writes: string[] = [];
-  async function fetch(url: string, init?: RequestInit) {
-    if (url.endsWith("/graphql")) {
-      return Response.json({
-        data: { viewer: { login: "github-actions[bot]" } },
-      });
-    }
-    if (!init?.body) {
-      return Response.json([
-        {
-          id: 500,
-          html_url: COMMENT_URL,
-          user: { login: "github-actions[bot]" },
-          body: `<!-- diffcop:review -->\n<!-- diffcop:run=${claimedBy} -->`,
-        },
-      ]);
-    }
-    writes.push(commentWrite.parse(await new Request(url, init).json()).body);
-    if (failWrites) {
-      return new Response("Bad gateway", { status: 502 });
-    }
-    return Response.json({});
-  }
-  return {
-    writes: writes,
-    fetch: fetch,
-  };
-}
+const graphqlCall = z.object({
+  query: z.string(),
+  variables: z
+    .object({
+      id: z.string().optional(),
+      ids: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
 
 const result: ReviewResult = {
   summary: "",
@@ -78,6 +61,105 @@ const result: ReviewResult = {
   },
 };
 
+const formatter = new ReviewCommentFormatter(pr);
+
+const REVIEWED = formatter.review(result);
+const FAILED = formatter.failure(new Error("boom"));
+
+interface Write {
+  method: string;
+  body: string;
+}
+
+// The PR starts with one diffcop comment: run `claimedBy`'s review of `reviewed`, or with
+// `failure`, its failed attempt at one.
+function fakeGitHub({
+  claimedBy = "41",
+  reviewed = EARLIER_COMMIT,
+  failure = false,
+  failWrites = false,
+  failLists = false,
+  failHides = false,
+} = {}) {
+  const writes: Write[] = [];
+  const hidden: string[] = [];
+  const comments = [
+    {
+      id: 500,
+      node_id: "C500",
+      html_url: EARLIER_URL,
+      user: { login: "github-actions[bot]" },
+      body: [
+        "<!-- diffcop:review -->",
+        `<!-- diffcop:run=${claimedBy} -->`,
+        `<!-- diffcop:head=${reviewed} -->`,
+        failure ? FAILED : REVIEWED,
+      ].join("\n"),
+    },
+  ];
+  async function graphql(url: string, init?: RequestInit) {
+    const { query, variables } = graphqlCall.parse(
+      await new Request(url, init).json(),
+    );
+    if (query.includes("viewer")) {
+      return Response.json({
+        data: { viewer: { login: "github-actions[bot]" } },
+      });
+    }
+    if (query.includes("minimizeComment")) {
+      if (failHides) {
+        return Response.json({ errors: [{ message: "Not allowed" }] });
+      }
+      hidden.push(variables?.id ?? "");
+      return Response.json({ data: { minimizeComment: {} } });
+    }
+    const nodes = (variables?.ids ?? []).map((id) => {
+      return {
+        id: id,
+        isMinimized: false,
+      };
+    });
+    return Response.json({ data: { nodes: nodes } });
+  }
+  async function fetch(url: string, init?: RequestInit) {
+    if (url.endsWith("/graphql")) {
+      return graphql(url, init);
+    }
+    const method = init?.method ?? "GET";
+    if (method === "GET") {
+      if (failLists) {
+        return new Response("Bad gateway", { status: 502 });
+      }
+      return Response.json(comments);
+    }
+    const { body } = commentWrite.parse(await new Request(url, init).json());
+    writes.push({
+      method: method,
+      body: body,
+    });
+    if (failWrites) {
+      return new Response("Bad gateway", { status: 502 });
+    }
+    if (method === "POST") {
+      const created = {
+        id: 900,
+        node_id: "C900",
+        html_url: NEW_URL,
+        user: { login: "github-actions[bot]" },
+        body: body,
+      };
+      comments.push(created);
+      return Response.json(created);
+    }
+    return Response.json({});
+  }
+  return {
+    writes: writes,
+    hidden: hidden,
+    fetch: fetch,
+  };
+}
+
 function createReporter(
   fetch: Fetch,
   secrets: string[] = [],
@@ -86,7 +168,7 @@ function createReporter(
   const log = new BufferSink();
   const statuses: StatusUpdate[] = [];
   const reporter: ReviewReporter = new GitHubReporter(
-    new StickyComment(
+    new ReviewComments(
       pr,
       new GitHubClient({
         baseUrl: pr.apiUrl,
@@ -111,60 +193,54 @@ function createReporter(
 }
 
 describe("GitHubReporter", () => {
-  test("started posts the running status", async () => {
+  test("started marks the commit as being reviewed and posts no comment", async () => {
     const { writes, fetch } = fakeGitHub();
-    const { reporter, log } = createReporter(fetch);
+    const { reporter, statuses, log } = createReporter(fetch);
 
     await reporter.started();
 
-    expect(writes).toHaveLength(1);
-    expect(writes[0]).toContain("⏳ Reviewing `abc1234`");
-    expect(log.text).toBe("Updated the diffcop comment on owner/repo#7\n");
+    expect(writes).toEqual([]);
+    expect(statuses).toEqual([
+      {
+        state: "pending",
+        description: "Reviewing…",
+      },
+    ]);
+    expect(log.text).toBe("");
   });
 
-  test("started warns instead of throwing when the post fails", async () => {
-    const { fetch } = fakeGitHub({ failWrites: true });
-    const { reporter, log } = createReporter(fetch);
+  test("started leaves the status to a newer run", async () => {
+    const { fetch } = fakeGitHub({ claimedBy: "43" });
+    const { reporter, statuses } = createReporter(fetch);
 
     await reporter.started();
 
-    expect(log.text).toStartWith("Couldn't update the diffcop comment:");
-    expect(log.text).toContain("502 Bad gateway");
+    expect(statuses).toEqual([]);
   });
 
-  test("started leaves a comment claimed by a newer run alone", async () => {
-    const { writes, fetch } = fakeGitHub({ claimedBy: "43" });
-    const { reporter, log } = createReporter(fetch);
+  test("started still marks the commit when the comments can't be read", async () => {
+    const { fetch } = fakeGitHub({ failLists: true });
+    const { reporter, statuses } = createReporter(fetch);
 
     await reporter.started();
 
-    expect(writes).toHaveLength(0);
-    expect(log.text).toContain("A newer run has taken over");
+    expect(statuses).toMatchObject([{ state: "pending" }]);
   });
 
-  test("warning re-posts the running status with the warning on top", async () => {
+  test("a warning waits for the review's comment", async () => {
     const { writes, fetch } = fakeGitHub();
-    const { reporter } = createReporter(fetch);
+    const { reporter, statuses } = createReporter(fetch);
 
     await reporter.started();
     await reporter.warning("This change is large.");
+    expect(writes).toEqual([]);
+    expect(statuses).toHaveLength(1);
+
     await reporter.completed(result);
 
-    expect(writes).toHaveLength(3);
-    expect(writes[0]).not.toContain("[!WARNING]");
-    expect(writes[1]).toContain("> [!WARNING]\n> This change is large.");
-    expect(writes[1]).toContain("⏳ Reviewing `abc1234`");
-    expect(writes[2]).toContain("> [!WARNING]\n> This change is large.");
-    expect(writes[2]).toContain("✅ **All good**");
-  });
-
-  test("warning warns instead of throwing when the post fails", async () => {
-    const { fetch } = fakeGitHub({ failWrites: true });
-    const { reporter, log } = createReporter(fetch);
-
-    await reporter.warning("This change is large.");
-
-    expect(log.text).toStartWith("Couldn't update the diffcop comment:");
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.body).toContain("> [!WARNING]\n> This change is large.");
+    expect(writes[0]?.body).toContain("✅ **All good**");
   });
 
   test("logs the verification phase", async () => {
@@ -196,89 +272,38 @@ describe("GitHubReporter", () => {
     expect(log.text).toBe('› read {"path":"a.ts"}\n› thinking (2s)\n');
   });
 
-  test("completed posts the review", async () => {
-    const { writes, fetch } = fakeGitHub();
-    const { reporter } = createReporter(fetch);
+  test("completed posts a new commit's review as a new comment and hides the earlier one", async () => {
+    const { writes, hidden, fetch } = fakeGitHub();
+    const { reporter, statuses, log } = createReporter(fetch);
 
     await reporter.completed(result);
 
-    expect(writes[0]).toContain("✅ **All good**");
-  });
-
-  test("completed throws when the post fails", async () => {
-    const { fetch } = fakeGitHub({ failWrites: true });
-    const { reporter } = createReporter(fetch);
-
-    expect(reporter.completed(result)).rejects.toThrow("502 Bad gateway");
-  });
-
-  test("completed leaves a comment claimed by a newer run alone", async () => {
-    const { writes, fetch } = fakeGitHub({ claimedBy: "43" });
-    const { reporter, log } = createReporter(fetch);
-
-    await reporter.completed(result);
-
-    expect(writes).toHaveLength(0);
-    expect(log.text).toContain("A newer run has taken over");
-  });
-
-  test("failed redacts credentials from the posted error", async () => {
-    const { writes, fetch } = fakeGitHub();
-    const { reporter } = createReporter(fetch, ["sk-secret", "ghs_secret"]);
-
-    await reporter.failed(new Error("401 for sk-secret, then ghs_secret"), {
-      cancelled: false,
-    });
-
-    expect(writes[0]).toContain("401 for ***, then ***");
-  });
-
-  test("failed warns instead of throwing when the post fails", async () => {
-    const { fetch } = fakeGitHub({ failWrites: true });
-    const { reporter, log } = createReporter(fetch);
-
-    await reporter.failed(new Error("boom"), { cancelled: false });
-
-    expect(log.text).toStartWith("Couldn't update the diffcop comment:");
-  });
-
-  test("started marks the commit as being reviewed", async () => {
-    const { fetch } = fakeGitHub();
-    const { reporter, statuses } = createReporter(fetch);
-
-    await reporter.started();
-
-    expect(statuses).toEqual([
-      {
-        state: "pending",
-        description: "Reviewing…",
-      },
-    ]);
-  });
-
-  test("a warning doesn't post the pending status again", async () => {
-    const { fetch } = fakeGitHub();
-    const { reporter, statuses } = createReporter(fetch);
-
-    await reporter.started();
-    await reporter.warning("This change is large.");
-
-    expect(statuses).toHaveLength(1);
-  });
-
-  test("completed passes the commit and links to the comment", async () => {
-    const { fetch } = fakeGitHub();
-    const { reporter, statuses } = createReporter(fetch);
-
-    await reporter.completed(result);
-
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.method).toBe("POST");
+    expect(writes[0]?.body).toContain("✅ **All good**");
+    expect(hidden).toEqual(["C500"]);
     expect(statuses).toEqual([
       {
         state: "success",
         description: "All good",
-        url: COMMENT_URL,
+        url: NEW_URL,
       },
     ]);
+    expect(log.text).toBe(
+      "Wrote the diffcop comment on owner/repo#7\nHid 1 earlier diffcop comment as outdated\n",
+    );
+  });
+
+  test("completed edits the comment of a commit it reviewed before", async () => {
+    const { writes, hidden, fetch } = fakeGitHub({ reviewed: pr.headSha });
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.completed(result);
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.method).toBe("PATCH");
+    expect(hidden).toEqual([]);
+    expect(statuses).toMatchObject([{ url: EARLIER_URL }]);
   });
 
   test("completed fails the commit when the review found an issue", async () => {
@@ -308,18 +333,97 @@ describe("GitHubReporter", () => {
     ]);
   });
 
-  test("failed marks the commit as errored", async () => {
-    const { fetch } = fakeGitHub();
-    const { reporter, statuses } = createReporter(fetch);
+  test("completed throws when the post fails", async () => {
+    const { fetch } = fakeGitHub({ failWrites: true });
+    const { reporter } = createReporter(fetch);
 
-    await reporter.failed(new Error("boom"), { cancelled: false });
-    await reporter.failed(new Error("aborted"), { cancelled: true });
+    expect(reporter.completed(result)).rejects.toThrow("502 Bad gateway");
+  });
 
+  test("completed leaves the PR to a newer run", async () => {
+    const { writes, hidden, fetch } = fakeGitHub({ claimedBy: "43" });
+    const { reporter, statuses, log } = createReporter(fetch);
+
+    await reporter.completed(result);
+
+    expect(writes).toEqual([]);
+    expect(hidden).toEqual([]);
+    expect(statuses).toEqual([]);
+    expect(log.text).toContain("A newer run has taken over");
+  });
+
+  test("completed still passes the commit when the earlier comment can't be hidden", async () => {
+    const { fetch } = fakeGitHub({ failHides: true });
+    const { reporter, statuses, log } = createReporter(fetch);
+
+    await reporter.completed(result);
+
+    expect(statuses).toMatchObject([{ state: "success" }]);
+    expect(log.text).toContain("Couldn't hide the earlier diffcop comments:");
+  });
+
+  test("failed posts the error, redacted, and marks the commit as errored", async () => {
+    const { writes, hidden, fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch, [
+      "sk-secret",
+      "ghs_secret",
+    ]);
+
+    await reporter.failed(new Error("401 for sk-secret, then ghs_secret"), {
+      cancelled: false,
+    });
+
+    expect(writes[0]?.body).toContain("401 for ***, then ***");
+    expect(hidden).toEqual([]);
     expect(statuses).toEqual([
       {
         state: "error",
         description: "The review failed",
       },
+    ]);
+  });
+
+  test("failed posts after this commit's review, not over it", async () => {
+    const { writes, fetch } = fakeGitHub({ reviewed: pr.headSha });
+    const { reporter } = createReporter(fetch);
+
+    await reporter.failed(new Error("boom"), { cancelled: false });
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.method).toBe("POST");
+  });
+
+  test("failed edits this commit's earlier failure", async () => {
+    const { writes, fetch } = fakeGitHub({
+      reviewed: pr.headSha,
+      failure: true,
+    });
+    const { reporter } = createReporter(fetch);
+
+    await reporter.failed(new Error("boom again"), { cancelled: false });
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.method).toBe("PATCH");
+  });
+
+  test("failed warns instead of throwing when the post fails", async () => {
+    const { fetch } = fakeGitHub({ failWrites: true });
+    const { reporter, statuses, log } = createReporter(fetch);
+
+    await reporter.failed(new Error("boom"), { cancelled: false });
+
+    expect(log.text).toStartWith("Couldn't post the diffcop comment:");
+    expect(statuses).toMatchObject([{ state: "error" }]);
+  });
+
+  test("a cancelled review posts no comment, only the status", async () => {
+    const { writes, fetch } = fakeGitHub();
+    const { reporter, statuses } = createReporter(fetch);
+
+    await reporter.failed(new Error("aborted"), { cancelled: true });
+
+    expect(writes).toEqual([]);
+    expect(statuses).toEqual([
       {
         state: "error",
         description: "The review was cancelled",
@@ -327,24 +431,14 @@ describe("GitHubReporter", () => {
     ]);
   });
 
-  test("still marks the commit when the comment can't be updated", async () => {
-    const { fetch } = fakeGitHub({ failWrites: true });
+  test("failed leaves the PR to a newer run", async () => {
+    const { writes, fetch } = fakeGitHub({ claimedBy: "43" });
     const { reporter, statuses } = createReporter(fetch);
 
-    await reporter.started();
     await reporter.failed(new Error("boom"), { cancelled: false });
+    await reporter.failed(new Error("aborted"), { cancelled: true });
 
-    expect(statuses).toMatchObject([{ state: "pending" }, { state: "error" }]);
-  });
-
-  test("leaves the status to a newer run that has taken over the comment", async () => {
-    const { fetch } = fakeGitHub({ claimedBy: "43" });
-    const { reporter, statuses } = createReporter(fetch);
-
-    await reporter.started();
-    await reporter.completed(result);
-    await reporter.failed(new Error("boom"), { cancelled: false });
-
+    expect(writes).toEqual([]);
     expect(statuses).toEqual([]);
   });
 });

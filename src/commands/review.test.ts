@@ -85,7 +85,7 @@ describe("review", () => {
     );
   });
 
-  test("rejects --ledger with --reporter github, which keeps its own", async () => {
+  test("rejects --ledger with --reporter github, which reads its own comments", async () => {
     const proc = Bun.spawn(
       [
         "bun",
@@ -107,7 +107,7 @@ describe("review", () => {
     );
     expect(await proc.exited).not.toBe(0);
     expect(await new Response(proc.stderr).text()).toContain(
-      "--ledger is for local runs; --reporter github keeps the ledger in the PR comment.",
+      "--ledger is for local runs; --reporter github reads the earlier rounds from its PR comments.",
     );
   });
 

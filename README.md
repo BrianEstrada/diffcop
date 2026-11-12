@@ -61,7 +61,8 @@ counting lockfiles) and suggests splitting it. Change the limits with `--maxLine
 
 ## GitHub Action
 
-The action reviews each pull request and keeps the result in a single PR comment.
+The action reviews each pull request and posts the result as a PR comment, with the verdict as a
+status on the commit.
 
 Run `claude setup-token` to get a token for your Claude subscription and add it as a
 `CLAUDE_CODE_OAUTH_TOKEN` repo secret, or add an `ANTHROPIC_API_KEY` secret to pay per token. Then
@@ -157,6 +158,12 @@ only blocks merging if you make `diffcop` a required status check; then a PR the
 such as a draft or one from a fork, waits for a status that never comes. The status needs
 `statuses: write`; without it diffcop says so in the log and posts the comment alone.
 
+Each reviewed commit gets a comment of its own, posted when its review is done, so the
+notification carries the result. Earlier diffcop comments are then hidden as outdated: a PR shows
+one review, and the earlier rounds stay a click away. Reviewing a commit again edits its comment
+instead of posting another. Nothing is posted while a review runs, or when one is cancelled; the
+status covers both. A review that fails posts the error, after that commit's review if it has one.
+
 Below it, collapsible sections list the findings, bugs that predate the diff, what verification
 dropped and why, what an earlier round settled, and the files the reviewer read. The last one,
 **Run details**, has the time, tokens and cost of each run, and how the diff was split: each
@@ -173,9 +180,11 @@ finishes. A retargeted base, or a push, still reviews the code.
 
 ### Reviewing a change again
 
-diffcop remembers what it found. On a PR it keeps a ledger of every round, hidden in its comment.
-For a local run, pass `--ledger <file>` and it keeps the ledger there. A round belongs to a commit,
-so reviewing the same commit twice redoes its round.
+diffcop remembers what it found. On a PR each of its comments keeps that round's findings, hidden
+after the review, and the next run reads them back from every comment; hiding a comment doesn't
+change that, deleting one forgets its round. For a local run, pass `--ledger <file>` and it keeps
+every round there. A round belongs to a commit, so reviewing the same commit twice redoes its
+round.
 
 When a change was reviewed before:
 

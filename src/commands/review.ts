@@ -15,9 +15,9 @@ import { JsonReporter } from "@/reporter/console/json-reporter";
 import { GitHubClient } from "@/github/github-client";
 import { CommitStatus } from "@/reporter/github/commit-status";
 import { GitHubReporter } from "@/reporter/github/github-reporter";
-import { readLedger } from "@/reporter/github/ledger-marker";
+import { ledgerFromComments } from "@/reporter/github/ledger-marker";
 import { ReviewCommentFormatter } from "@/reporter/github/review-comment-formatter";
-import { StickyComment } from "@/reporter/github/sticky-comment";
+import { ReviewComments } from "@/reporter/github/review-comments";
 import type { ReviewReporter } from "@/reporter/review-reporter";
 import { ChangeSizeLimit } from "@/review/change-size-limit";
 import {
@@ -103,7 +103,7 @@ function createGitHubComment(
     );
   }
   return {
-    comment: new StickyComment(pr, github),
+    comment: new ReviewComments(pr, github),
     status: new CommitStatus(pr, github, process.stderr),
     formatter: new ReviewCommentFormatter(pr, {
       secrets: [
@@ -132,8 +132,8 @@ function createLocalReporter(
   }
 }
 
-// What earlier reviews of this change found: from the PR comment, where the
-// formatter then keeps it, or from the --ledger file of a local run.
+// What earlier reviews of this change found: from diffcop's comments on the PR,
+// each of which keeps its own round, or from the --ledger file of a local run.
 async function loadLedger(
   githubComment: GitHubComment | undefined,
   ledgerFile: LedgerFile | undefined,
@@ -141,9 +141,7 @@ async function loadLedger(
   if (!githubComment) {
     return ledgerFile?.load();
   }
-  const ledger = readLedger((await githubComment.comment.read()) ?? "");
-  githubComment.formatter.setLedger(ledger);
-  return ledger;
+  return ledgerFromComments(await githubComment.comment.readAll());
 }
 
 function recheckLine(outcome: RecheckOutcome) {
@@ -211,7 +209,7 @@ export default defineCommand({
     ledger: {
       type: "string",
       description:
-        "File that keeps what earlier reviews of this change found, so the next one doesn't repeat them. For local runs: --reporter github keeps it in the PR comment",
+        "File that keeps what earlier reviews of this change found, so the next one doesn't repeat them. For local runs: --reporter github reads them from its PR comments",
     },
     full: {
       type: "boolean",
@@ -223,7 +221,7 @@ export default defineCommand({
       options: [...REPORTERS],
       default: "console",
       description:
-        "Where the review goes: console shows progress then the findings, json prints one object when done, github keeps it in a PR comment (GitHub Actions only; needs GITHUB_TOKEN or GH_TOKEN)",
+        "Where the review goes: console shows progress then the findings, json prints one object when done, github posts it as a PR comment and a commit status (GitHub Actions only; needs GITHUB_TOKEN or GH_TOKEN)",
     },
     debug: {
       type: "boolean",
@@ -250,7 +248,7 @@ export default defineCommand({
     if (args.reporter === "github") {
       if (args.ledger !== undefined) {
         throw new Error(
-          "--ledger is for local runs; --reporter github keeps the ledger in the PR comment.",
+          "--ledger is for local runs; --reporter github reads the earlier rounds from its PR comments.",
         );
       }
       githubComment = createGitHubComment(pr, github);
@@ -323,7 +321,6 @@ export default defineCommand({
     if (args.ledger !== undefined) {
       ledgerFile = new LedgerFile(args.ledger);
     }
-    // Read before the review starts: its first status update replaces the comment.
     const ledger = await loadLedger(githubComment, ledgerFile);
     // A round is keyed by its commit, so reviewing one again redoes its round.
     let headSha = pr?.headSha;
