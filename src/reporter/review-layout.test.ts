@@ -114,13 +114,15 @@ describe("reviewLayout headline", () => {
 
   test("blocks on a description mismatch, named after any issues", () => {
     expect(layout([mismatch, nit]).headline).toEqual({
-      icon: "🟡",
+      icon: "🔴",
       text: "Description doesn't match the diff, 1 minor finding",
       blocking: true,
     });
-    expect(layout([mismatch]).headline.text).toBe(
-      "Description doesn't match the diff",
-    );
+    expect(layout([mismatch]).headline).toEqual({
+      icon: "🔴",
+      text: "Description doesn't match the diff",
+      blocking: true,
+    });
     expect(layout([mismatch, high]).headline).toEqual({
       icon: "🔴",
       text: "1 issue, description doesn't match the diff",

@@ -147,7 +147,7 @@ a warning.
 The review opens with a headline that says what was found and how much of it:
 
 - 🔴 **2 issues, 6 minor findings**: issues are high or medium bugs the diff introduced.
-- 🟡 **Description doesn't match the diff**: the PR claims something the code doesn't do.
+- 🔴 **Description doesn't match the diff**: the PR claims something the code doesn't do.
 - 🟡 **6 minor findings**: nothing serious. A minor finding is a low one or a nit.
 - ✅ **All good**: nothing found.
 
@@ -158,11 +158,11 @@ details**, has the time, tokens and cost of each run, and how the diff was split
 files, changed lines and findings.
 
 The headline is also posted as a commit status named `diffcop` on the PR's head commit, linking to
-the comment. It's pending while the review runs, then green when nothing or only minor findings
-were found, and red for issues or a description mismatch. A review that fails or is cancelled marks it as errored. It
-only blocks merging if you make `diffcop` a required status check; then a PR the workflow skips,
-such as a draft or one from a fork, waits for a status that never comes. The status needs
-`statuses: write`; without it diffcop says so in the log and posts the comment alone.
+the comment. It's pending while the review runs, then green when nothing or only minor findings were
+found, and red for issues or a description mismatch. A review that fails or is cancelled marks it as
+errored. It only blocks merging if you make `diffcop` a required status check; then a PR the
+workflow skips, such as a draft or one from a fork, waits for a status that never comes. The status
+needs `statuses: write`; without it diffcop says so in the log and posts the comment alone.
 
 Each reviewed commit gets a comment of its own, posted when its review is done, so the
 notification carries the result. Earlier diffcop comments are then hidden as outdated: a PR shows

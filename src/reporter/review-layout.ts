@@ -266,11 +266,12 @@ function reported(findings: Finding[]) {
   ];
 }
 
-function headlineIcon(blocking: number, total: number) {
-  if (blocking > 0) {
+// Red exactly when the status check fails, so the comment and the check never disagree.
+function headlineIcon(blocking: boolean, minor: number) {
+  if (blocking) {
     return "🔴";
   }
-  if (total > 0) {
+  if (minor > 0) {
     return "🟡";
   }
   return "✅";
@@ -300,10 +301,11 @@ export function reviewHeadline(findings: Finding[]): Headline {
   if (parts.length === 1 && issues > 0) {
     text = `${text} found`;
   }
+  const blocking = issues + mismatches > 0;
   return {
-    icon: headlineIcon(issues, issues + mismatches + minor),
+    icon: headlineIcon(blocking, minor),
     text: text,
-    blocking: issues + mismatches > 0,
+    blocking: blocking,
   };
 }
 
