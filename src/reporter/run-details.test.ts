@@ -41,14 +41,14 @@ function finder(
 const finders = [finder(1), finder(2), finder(1), finder(2), finder(undefined)];
 
 describe("runDetailsSection", () => {
-  test("is a closed section", () => {
+  test("is a section of its own", () => {
     const section = runDetailsSection({
       stats: stats,
       finders: [],
     });
 
     expect(section.title).toBe("Run details");
-    expect(section.open).toBe(false);
+    expect(section.count).toBeUndefined();
   });
 
   test("lists the review's numbers in one row, and says one finder reviewed the diff", () => {

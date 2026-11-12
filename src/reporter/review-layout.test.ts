@@ -87,31 +87,47 @@ function section(title: string, findings: Finding[], summary = "") {
 }
 
 describe("reviewLayout headline", () => {
-  test("counts introduced high and medium findings as issues", () => {
+  test("counts introduced high and medium findings as issues, and the rest as minor", () => {
     expect(layout([high, medium, low, nit]).headline).toEqual({
       icon: "🔴",
-      text: "2 issues found",
+      text: "2 issues, 2 minor findings",
       blocking: true,
     });
+    expect(layout([medium, nit]).headline.text).toBe(
+      "1 issue, 1 minor finding",
+    );
+  });
+
+  test("says issues were found when they're all there is", () => {
+    expect(layout([high, medium]).headline.text).toBe("2 issues found");
     expect(layout([medium]).headline.text).toBe("1 issue found");
   });
 
-  test("is only nits when every introduced finding is low or a nit", () => {
-    expect(layout([low]).headline).toEqual({
+  test("counts minor findings without blocking on them", () => {
+    expect(layout([low, nit]).headline).toEqual({
       icon: "🟡",
-      text: "Only nits",
+      text: "2 minor findings",
       blocking: false,
     });
-    expect(layout([nit, old]).headline.text).toBe("Only nits");
+    expect(layout([nit, old]).headline.text).toBe("1 minor finding");
   });
 
-  test("flags a description mismatch over nits, but not over issues", () => {
+  test("blocks on a description mismatch, named after any issues", () => {
     expect(layout([mismatch, nit]).headline).toEqual({
-      icon: "🟡",
+      icon: "🔴",
+      text: "Description doesn't match the diff, 1 minor finding",
+      blocking: true,
+    });
+    expect(layout([mismatch]).headline).toEqual({
+      icon: "🔴",
       text: "Description doesn't match the diff",
       blocking: true,
     });
-    expect(layout([mismatch, high]).headline.text).toBe("1 issue found");
+    expect(layout([mismatch, high]).headline).toEqual({
+      icon: "🔴",
+      text: "1 issue, description doesn't match the diff",
+      blocking: true,
+    });
   });
 
   test("is all good when nothing was introduced, whatever was already wrong", () => {
@@ -125,7 +141,7 @@ describe("reviewLayout headline", () => {
 });
 
 describe("reviewLayout sections", () => {
-  test("come in a fixed order, and only Issues and mismatches start open", () => {
+  test("come in a fixed order, with every reported finding under Findings", () => {
     const { sections } = layout([nit, old, mismatch, high], {
       dropped: [
         {
@@ -134,47 +150,33 @@ describe("reviewLayout sections", () => {
         },
       ],
     });
-    expect(
-      sections.map((s) => {
-        return [sectionHeading(s), s.open];
-      }),
-    ).toEqual([
-      ["Issues (1)", true],
-      ["Description doesn't match the diff (1)", true],
-      ["Nits (1)", false],
-      ["Outside this PR's scope (1)", false],
-      ["Dropped by verification (1)", false],
-      ["What we looked at", false],
+    expect(sections.map(sectionHeading)).toEqual([
+      "Findings (3)",
+      "Outside this PR's scope (1)",
+      "Dropped by verification (1)",
+      "What we looked at",
     ]);
   });
 
   test("leave out every empty section but What we looked at", () => {
     expect(titles([])).toEqual(["What we looked at"]);
-    expect(titles([low, nit])).toEqual(["Nits (2)", "What we looked at"]);
+    expect(titles([low, nit])).toEqual(["Findings (2)", "What we looked at"]);
     expect(titles([old])).toEqual([
       "Outside this PR's scope (1)",
       "What we looked at",
     ]);
   });
 
-  test("list issues most severe first in a table", () => {
-    expect(section("Issues", [medium, high])?.body).toBe(
+  test("list findings in one table: issues most severe first, then the description, then the minor ones", () => {
+    expect(section("Findings", [nit, mismatch, medium, low, high])?.body).toBe(
       [
         "| Severity | Location | Issue |",
         "| --- | --- | --- |",
         "| **High** | `src/a.ts:10-12` | **Crashes on an empty list**<br>`items[0].id` throws when `items` is [].<br>See src/a.ts:11. |",
         "| **Medium** | `src/a.ts:10-12` | **Loses the last page**<br>`items[0].id` throws when `items` is [].<br>See src/a.ts:11. |",
-      ].join("\n"),
-    );
-  });
-
-  test("put low findings and nits under Nits", () => {
-    expect(section("Nits", [nit, low])?.body).toBe(
-      [
-        "| Severity | Location | Issue |",
-        "| --- | --- | --- |",
-        "| **Low** | `src/b.ts:3` | **Off-by-one in the page count**<br>With 10 items and a page size of 5, it reports 3 pages. |",
-        "| **Nit** | `src/b.ts:3` | **`n` could be `pageCount`**<br>The name says what it counts. |",
+        '| **Description** | `src/a.ts:10-12` | **Says retries were added, but none were**<br>The description says "retries failed uploads", but `upload` still calls `fetch` once. |',
+        "| **Minor** | `src/b.ts:3` | **Off-by-one in the page count**<br>With 10 items and a page size of 5, it reports 3 pages. |",
+        "| **Minor** | `src/b.ts:3` | **`n` could be `pageCount`**<br>The name says what it counts. |",
       ].join("\n"),
     );
   });
@@ -185,7 +187,7 @@ describe("reviewLayout sections", () => {
       title: "a || b",
       explanation: "x | y",
     };
-    expect(section("Nits", [piped])?.body).toEndWith(
+    expect(section("Findings", [piped])?.body).toEndWith(
       "| **a \\|\\| b**<br>x \\| y |",
     );
   });
@@ -214,7 +216,7 @@ describe("reviewLayout sections", () => {
         "| # | Severity | Location | Title |",
         "| --- | --- | --- | --- |",
         "| 1 | **High** | `src/a.ts:10-12` | Crashes on an empty list |",
-        "| 2 | **Low** | `src/b.ts:3` | Off-by-one in the page count |",
+        "| 2 | **Minor** | `src/b.ts:3` | Off-by-one in the page count |",
         "",
         "1. `items[0].id` throws when `items` is [].",
         "   See src/a.ts:11.",
@@ -223,19 +225,6 @@ describe("reviewLayout sections", () => {
         "2. With 10 items and a page size of 5, it reports 3 pages.",
         "",
         "   Verifier: No verdict returned",
-      ].join("\n"),
-    );
-  });
-
-  test("list description mismatches apart from the code's issues", () => {
-    expect(section("Issues", [mismatch])).toBeUndefined();
-    expect(
-      section("Description doesn't match the diff", [mismatch])?.body,
-    ).toBe(
-      [
-        "| Severity | Location | Issue |",
-        "| --- | --- | --- |",
-        '| **Medium** | `src/a.ts:10-12` | **Says retries were added, but none were**<br>The description says "retries failed uploads", but `upload` still calls `fetch` once. |',
       ].join("\n"),
     );
   });
@@ -271,7 +260,7 @@ describe("reviewLayout sections", () => {
         "| Severity | Location | Issue | Verifier |",
         "| --- | --- | --- | --- |",
         "| **High** | `src/a.ts:10-12` | **Crashes on an empty list**<br>`items[0].id` throws when `items` is [].<br>See src/a.ts:11. | Guarded by<br>the caller. |",
-        "| **Low** | `src/b.ts:3` | **Off-by-one in the page count**<br>With 10 items and a page size of 5, it reports 3 pages. | No verdict returned |",
+        "| **Minor** | `src/b.ts:3` | **Off-by-one in the page count**<br>With 10 items and a page size of 5, it reports 3 pages. | No verdict returned |",
       ].join("\n"),
     );
   });
@@ -354,7 +343,7 @@ describe("reviewLayout on a re-review", () => {
     });
   }
 
-  test("lists settled findings in a closed section, with what settled them", () => {
+  test("lists settled findings in a section of their own, with what settled them", () => {
     const { headline, sections } = rereviewed(0);
     const settled = sections.find((s) => {
       return s.title === "Settled in an earlier round";
@@ -362,11 +351,10 @@ describe("reviewLayout on a re-review", () => {
 
     expect(headline.text).toBe("1 issue found");
     expect(sections.map(sectionHeading)).toEqual([
-      "Issues (1)",
+      "Findings (1)",
       "Settled in an earlier round (1)",
       "What we looked at",
     ]);
-    expect(settled?.open).toBe(false);
     expect(settled?.body).toContain(
       "Declined in round 1: the other handlers do the same.",
     );

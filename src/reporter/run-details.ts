@@ -173,6 +173,5 @@ export function runDetailsSection(details: RunDetails): ReviewSection {
   return {
     title: "Run details",
     body: blocks.join("\n\n"),
-    open: false,
   };
 }

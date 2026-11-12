@@ -144,30 +144,31 @@ so only a PR's first review is split this way; [later ones](#reviewing-a-change-
 what changed. If one finder or the merge step fails, the review goes on without it and says so in
 a warning.
 
-The review opens with one headline:
+The review opens with a headline that says what was found and how much of it:
 
-- 🔴 **N issues found**: high or medium bugs the diff introduced.
-- 🟡 **Description doesn't match the diff**: the PR claims something the code doesn't do.
-- 🟡 **Only nits**: nothing serious.
+- 🔴 **2 issues, 6 minor findings**: issues are high or medium bugs the diff introduced.
+- 🔴 **Description doesn't match the diff**: the PR claims something the code doesn't do.
+- 🟡 **6 minor findings**: nothing serious. A minor finding is a low one or a nit.
 - ✅ **All good**: nothing found.
 
+Everything below the headline is collapsed. **Findings** lists every reported finding in one
+table, issues first. The other sections hold bugs that predate the diff, what verification dropped
+and why, what an earlier round settled, and the files the reviewer read. The last one, **Run
+details**, has the time, tokens and cost of each run, and how the diff was split: each chunk's
+files, changed lines and findings.
+
 The headline is also posted as a commit status named `diffcop` on the PR's head commit, linking to
-the comment. It's pending while the review runs, then green for **All good** and **Only nits**, and
-red for issues or a description mismatch. A review that fails or is cancelled marks it as errored. It
-only blocks merging if you make `diffcop` a required status check; then a PR the workflow skips,
-such as a draft or one from a fork, waits for a status that never comes. The status needs
-`statuses: write`; without it diffcop says so in the log and posts the comment alone.
+the comment. It's pending while the review runs, then green when nothing or only minor findings were
+found, and red for issues or a description mismatch. A review that fails or is cancelled marks it as
+errored. It only blocks merging if you make `diffcop` a required status check; then a PR the
+workflow skips, such as a draft or one from a fork, waits for a status that never comes. The status
+needs `statuses: write`; without it diffcop says so in the log and posts the comment alone.
 
 Each reviewed commit gets a comment of its own, posted when its review is done, so the
 notification carries the result. Earlier diffcop comments are then hidden as outdated: a PR shows
 one review, and the earlier rounds stay a click away. Reviewing a commit again edits its comment
 instead of posting another. Nothing is posted while a review runs, or when one is cancelled; the
 status covers both. A review that fails posts the error, after that commit's review if it has one.
-
-Below it, collapsible sections list the findings, bugs that predate the diff, what verification
-dropped and why, what an earlier round settled, and the files the reviewer read. The last one,
-**Run details**, has the time, tokens and cost of each run, and how the diff was split: each
-chunk's files, changed lines and findings.
 
 On a PR, the reviewer also sees the title, description, labels, comments and reviews, sanitized
 before they reach the prompt. It treats the description as the author's claims, not as proof.

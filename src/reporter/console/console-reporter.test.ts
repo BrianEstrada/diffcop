@@ -58,7 +58,7 @@ describe("ConsoleReporter", () => {
     });
     for (const text of [
       "🔴 1 issue found",
-      "Issues (1)",
+      "Findings (1)",
       "| 1   | Medium   | a.ts:4   | Drops the last item |",
       "1. slice(0, -1) skips the final element.",
       "Dropped by verification (1)",

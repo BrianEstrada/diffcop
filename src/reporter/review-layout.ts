@@ -8,11 +8,12 @@ import type {
   Severity,
 } from "@/review/findings";
 
+// Low and nit read as one level: which of the two a finding got never told readers which mattered.
 const SEVERITY_LABELS: Record<Severity, string> = {
   high: "High",
   medium: "Medium",
-  low: "Low",
-  nit: "Nit",
+  low: "Minor",
+  nit: "Minor",
 };
 
 const MAX_LISTED = 30;
@@ -29,7 +30,6 @@ export interface ReviewSection {
   count?: number;
   // Markdown, rendered as is by both the console and the PR comment.
   body: string;
-  open: boolean;
 }
 
 export interface ReviewLayout {
@@ -81,7 +81,11 @@ interface Row {
   reason?: string;
 }
 
-function severityCell({ severity }: Finding) {
+// A description finding blocks the PR whatever its severity, so it's named for what it is.
+function severityCell({ severity, scope }: Finding) {
+  if (scope === "description") {
+    return "**Description**";
+  }
   return `**${SEVERITY_LABELS[severity]}**`;
 }
 
@@ -135,13 +139,10 @@ function terminalTable(rows: Row[]) {
 }
 
 function rowsBody(rows: Row[], html: boolean) {
-  const sorted = rows.toSorted((a, b) => {
-    return bySeverity(a.finding, b.finding);
-  });
   if (html) {
-    return htmlTable(sorted);
+    return htmlTable(rows);
   }
-  return terminalTable(sorted);
+  return terminalTable(rows);
 }
 
 function findingsTable(findings: Finding[], html: boolean) {
@@ -154,7 +155,12 @@ function findingsTable(findings: Finding[], html: boolean) {
 }
 
 function droppedTable(dropped: DroppedFinding[], html: boolean) {
-  return rowsBody(dropped, html);
+  return rowsBody(
+    dropped.toSorted((a, b) => {
+      return bySeverity(a.finding, b.finding);
+    }),
+    html,
+  );
 }
 
 // Patterns can contain backticks, so fence with a longer run than the text has.
@@ -229,7 +235,7 @@ function isIssue({ severity }: Finding) {
   return severity === "high" || severity === "medium";
 }
 
-type FindingGroup = "issues" | "mismatches" | "nits" | "preexisting";
+type FindingGroup = "issues" | "mismatches" | "minor" | "preexisting";
 
 function findingGroup(finding: Finding): FindingGroup {
   switch (finding.scope) {
@@ -241,112 +247,66 @@ function findingGroup(finding: Finding): FindingGroup {
       if (isIssue(finding)) {
         return "issues";
       }
-      return "nits";
+      return "minor";
   }
 }
 
-interface GroupLayout {
-  group: FindingGroup;
-  title: string;
-  open: boolean;
-  // Shown above the group's table.
-  note?: string;
-  headline?: (count: number) => Headline;
-}
-
-// In section order, which is also the headline's priority: the first group
-// with findings and a headline sets it. Preexisting bugs don't block the PR.
-const GROUP_LAYOUTS: GroupLayout[] = [
-  {
-    group: "issues",
-    title: "Issues",
-    open: true,
-    headline: (count) => {
-      return {
-        icon: "🔴",
-        text: `${plural(count, "issue")} found`,
-        blocking: true,
-      };
-    },
-  },
-  {
-    group: "mismatches",
-    title: "Description doesn't match the diff",
-    open: true,
-    headline: () => {
-      return {
-        icon: "🟡",
-        text: "Description doesn't match the diff",
-        blocking: true,
-      };
-    },
-  },
-  {
-    group: "nits",
-    title: "Nits",
-    open: false,
-    headline: () => {
-      return {
-        icon: "🟡",
-        text: "Only nits",
-        blocking: false,
-      };
-    },
-  },
-  {
-    group: "preexisting",
-    title: "Outside this PR's scope",
-    open: false,
-    note: "Already wrong before this change, so not blocking it.",
-  },
-];
-
-interface GroupedFindings {
-  layout: GroupLayout;
-  findings: Finding[];
-}
-
-function groupSection({ layout, findings }: GroupedFindings, html: boolean) {
-  let body = findingsTable(findings, html);
-  if (layout.note) {
-    body = `${layout.note}\n\n${body}`;
-  }
-  return {
-    title: layout.title,
-    count: findings.length,
-    body: body,
-    open: layout.open,
-  };
-}
-
-function headline(groups: GroupedFindings[]): Headline {
-  for (const { layout, findings } of groups) {
-    if (layout.headline) {
-      return layout.headline(findings.length);
-    }
-  }
-  return {
-    icon: "✅",
-    text: "All good",
-    blocking: false,
-  };
-}
-
-function groupFindings(findings: Finding[]): GroupedFindings[] {
-  return GROUP_LAYOUTS.map((layout) => {
-    return {
-      layout: layout,
-      findings: findings.filter((f) => {
-        return findingGroup(f) === layout.group;
-      }),
-    };
-  }).filter((group) => {
-    return group.findings.length > 0;
+function inGroup(findings: Finding[], group: FindingGroup) {
+  return findings.filter((finding) => {
+    return findingGroup(finding) === group;
   });
 }
 
-export function reviewHeadline(findings: Finding[]) {
-  return headline(groupFindings(findings));
+// Everything the headline counts, in the order it names them: bugs, then the description, then the rest.
+function reported(findings: Finding[]) {
+  return [
+    ...inGroup(findings, "issues").toSorted(bySeverity),
+    ...inGroup(findings, "mismatches").toSorted(bySeverity),
+    ...inGroup(findings, "minor").toSorted(bySeverity),
+  ];
+}
+
+// Red exactly when the status check fails, so the comment and the check never disagree.
+function headlineIcon(blocking: boolean, minor: number) {
+  if (blocking) {
+    return "🔴";
+  }
+  if (minor > 0) {
+    return "🟡";
+  }
+  return "✅";
+}
+
+function capitalized(text: string) {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
+// The comment's sections are all collapsed, so this line is the review at a glance: what was
+// found and how much of it. Preexisting bugs don't block the PR and aren't counted.
+export function reviewHeadline(findings: Finding[]): Headline {
+  const issues = inGroup(findings, "issues").length;
+  const mismatches = inGroup(findings, "mismatches").length;
+  const minor = inGroup(findings, "minor").length;
+  const parts: string[] = [];
+  if (issues > 0) {
+    parts.push(plural(issues, "issue"));
+  }
+  if (mismatches > 0) {
+    parts.push("description doesn't match the diff");
+  }
+  if (minor > 0) {
+    parts.push(plural(minor, "minor finding"));
+  }
+  let text = capitalized(parts.join(", ")) || "All good";
+  if (parts.length === 1 && issues > 0) {
+    text = `${text} found`;
+  }
+  const blocking = issues + mismatches > 0;
+  return {
+    icon: headlineIcon(blocking, minor),
+    text: text,
+    blocking: blocking,
+  };
 }
 
 export function sectionHeading({ title, count }: ReviewSection) {
@@ -369,16 +329,28 @@ export function reviewLayout(
   >,
   { html = true }: LayoutOptions = {},
 ): ReviewLayout {
-  const groups = groupFindings(findings);
-  const sections: ReviewSection[] = groups.map((group) => {
-    return groupSection(group, html);
-  });
+  const sections: ReviewSection[] = [];
+  const counted = reported(findings);
+  if (counted.length > 0) {
+    sections.push({
+      title: "Findings",
+      count: counted.length,
+      body: findingsTable(counted, html),
+    });
+  }
+  const preexisting = inGroup(findings, "preexisting").toSorted(bySeverity);
+  if (preexisting.length > 0) {
+    sections.push({
+      title: "Outside this PR's scope",
+      count: preexisting.length,
+      body: `Already wrong before this change, so not blocking it.\n\n${findingsTable(preexisting, html)}`,
+    });
+  }
   if (dropped.length > 0) {
     sections.push({
       title: "Dropped by verification",
       count: dropped.length,
       body: droppedTable(dropped, html),
-      open: false,
     });
   }
   const settled = rereview?.settled ?? [];
@@ -387,16 +359,14 @@ export function reviewLayout(
       title: "Settled in an earlier round",
       count: settled.length,
       body: droppedTable(settled, html),
-      open: false,
     });
   }
   sections.push({
     title: "What we looked at",
     body: exploredBody(summary, explored, rereview),
-    open: false,
   });
   return {
-    headline: headline(groups),
+    headline: reviewHeadline(findings),
     sections: sections,
   };
 }
