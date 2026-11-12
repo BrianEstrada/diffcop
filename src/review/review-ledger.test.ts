@@ -324,6 +324,58 @@ describe("carriedFindings", () => {
     expect(titles(rounds)).toEqual(["Bug", "Nit, open"]);
   });
 
+  test("leaves out a minor finding that a later round settled, dropped or fixed", () => {
+    const { rounds } = ledger(
+      [
+        "aaaaaaa",
+        [
+          entry("Declined later", { severity: "nit" }),
+          entry("Dropped later", { severity: "nit" }),
+          entry("Fixed later", { severity: "low" }),
+          entry("Never judged", { severity: "low" }),
+        ],
+      ],
+      [
+        "bbbbbbb",
+        [
+          entry("Declined later", {
+            severity: "nit",
+            status: "settled",
+            reason: "Declined.",
+          }),
+          entry("Dropped later", {
+            severity: "nit",
+            status: "dropped",
+            reason: "Guarded.",
+          }),
+          entry("Fixed later", {
+            severity: "low",
+            status: "fixed",
+            reason: "Gone.",
+          }),
+        ],
+      ],
+    );
+
+    expect(titles(rounds)).toEqual(["Never judged"]);
+  });
+
+  test("carries both of two findings in a round that share a file and a title", () => {
+    const { rounds } = ledger([
+      "aaaaaaa",
+      [
+        entry("Missing null check", { startLine: 10 }),
+        entry("Missing null check", { startLine: 90 }),
+      ],
+    ]);
+
+    expect(
+      carriedFindings(rounds).map(({ startLine }) => {
+        return startLine;
+      }),
+    ).toEqual([10, 90]);
+  });
+
   test("carries a finding once when two rounds reported it", () => {
     const { rounds } = ledger(
       ["aaaaaaa", [entry("Same", { severity: "nit" })]],

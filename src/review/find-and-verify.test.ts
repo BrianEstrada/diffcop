@@ -563,8 +563,76 @@ describe("FindAndVerify on a re-review", () => {
     ).run(reviewedBefore([reported("Carried")]), [prompt]);
 
     expect(agent.runs[1]?.prompt.instructions).toContain("without using tools");
-    expect(findingsSent(agent.runs[2])).toEqual([["Found again", false]]);
+    expect(findingsSent(agent.runs[2])).toEqual([["Found again", true]]);
     expect(result.findings).toEqual([fresh]);
+    expect(result.rereview).toMatchObject({ stillOpen: 1 });
+  });
+
+  test("reports a carried finding as fixed when the fresh finding it was merged into is refuted", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("Found again")],
+      },
+      {
+        duplicates: [
+          {
+            id: 2,
+            duplicateOf: 1,
+          },
+        ],
+      },
+      { verdicts: [verdict(1, "refuted", "The guard was added.")] },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Carried")]), [prompt]);
+
+    expect(result.findings).toEqual([]);
+    expect(result.dropped).toEqual([]);
+    expect(result.rereview).toMatchObject({
+      fixed: [
+        {
+          finding: finding("Found again"),
+          reason: "The guard was added.",
+        },
+      ],
+      stillOpen: 0,
+    });
+  });
+
+  test("counts a carried finding as still open when the verifier marks it a repeat of a confirmed one", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [finding("Found again")],
+      },
+      { duplicates: [] },
+      {
+        verdicts: [
+          verdict(1, "confirmed"),
+          {
+            ...verdict(2, "duplicate"),
+            duplicateOf: 1,
+          },
+        ],
+      },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Carried")]), [prompt]);
+
+    expect(result.findings).toEqual([finding("Found again")]);
+    expect(result.rereview).toMatchObject({
+      fixed: [],
+      stillOpen: 1,
+    });
   });
 
   test("skips the merge step when a single finder has nothing to compare", async () => {

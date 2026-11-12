@@ -125,6 +125,7 @@ function isOpen({ status }: LedgerEntry) {
   return status === "reported";
 }
 
+// Across rounds, where a finding's lines move with the code around it.
 function sameFinding(a: LedgerEntry, b: LedgerEntry) {
   return a.file === b.file && a.title === b.title;
 }
@@ -132,21 +133,23 @@ function sameFinding(a: LedgerEntry, b: LedgerEntry) {
 // Every finding still open after the last round, each checked again this round: one that's
 // still there stays in the review, and one that's gone is reported as fixed.
 // A round from before open findings were all carried over repeated only the bugs, so its minor
-// ones are still in the rounds that first reported them.
+// ones are still in the rounds that first reported them, unless a later round judged them.
 export function carriedFindings(rounds: LedgerRound[]): Finding[] {
   const open: LedgerEntry[] = [];
+  const later: LedgerEntry[] = [];
   for (const [age, round] of rounds.toReversed().entries()) {
-    const candidates = round.entries.filter((item) => {
-      return isOpen(item) && (age === 0 || !isMajor(item));
-    });
-    for (const candidate of candidates) {
-      const known = open.some((item) => {
-        return sameFinding(item, candidate);
-      });
-      if (!known) {
-        open.push(candidate);
-      }
-    }
+    open.push(
+      ...round.entries.filter((item) => {
+        return (
+          isOpen(item) &&
+          (age === 0 || !isMajor(item)) &&
+          !later.some((judged) => {
+            return sameFinding(judged, item);
+          })
+        );
+      }),
+    );
+    later.push(...round.entries);
     if (round.complete) {
       break;
     }

@@ -184,6 +184,7 @@ export class FindAndVerify {
       });
     });
     const fresh = kept.flat();
+    // Grows as a carried finding is merged into a fresh one: that one then stands for it.
     const carried = new Set(previous ? carriedFindings(previous.rounds) : []);
     let findings = [...fresh, ...carried];
     const merging: AgentResult<unknown>[] = [];
@@ -204,6 +205,11 @@ export class FindAndVerify {
         findings = deduped.kept;
         merged.push(...deduped.merged);
         merging.push(deduplicated);
+        for (const { finding, into } of deduped.merged) {
+          if (carried.has(finding)) {
+            carried.add(into);
+          }
+        }
       }
     }
 
@@ -238,6 +244,12 @@ export class FindAndVerify {
           batches[index] ?? [],
           result.output.verdicts,
         );
+        // The verifier can also mark a carried finding as a repeat of another in its batch.
+        for (const [finding, original] of split.duplicates) {
+          if (carried.has(finding)) {
+            carried.add(original);
+          }
+        }
         confirmed.push(...split.confirmed);
         stillOpen += split.confirmedFrom.filter((finding) => {
           return carried.has(finding);

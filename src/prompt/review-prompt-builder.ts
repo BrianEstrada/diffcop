@@ -96,13 +96,12 @@ const REREVIEW_DELTA_INSTRUCTIONS = `<changes_since_last_review> holds what chan
 
 // The author can close a minor finding by declining it, but a bug only with a reason the code bears out.
 const VERIFIER_REREVIEW_INSTRUCTIONS = `This change was reviewed before. <previous_rounds> lists what the earlier rounds reported, what their verifier dropped, what was settled and what was fixed. The author's answers to them, where there are any, are beside them or in the PR description and comments.
-A finding with "earlierRound": true was reported by an earlier round and is still open. It's checked again here, with the lines it had in the commit that round saw:
+A finding with "earlierRound": true was reported by an earlier round and is still open. It's checked again here, and its lines can be the ones it had in the commit that round saw:
 - Refute it if the code no longer has the defect, and say what fixed it.
 - If the author answered it, the two rules about a declined finding below decide whether it's settled.
 - Otherwise, if the defect is still there, confirm it and give its current startLine and endLine. That it was reported before is not a reason to settle it.
 Give a finding the verdict "settled" instead of judging it again when one of these holds, and name the earlier finding or answer in the reason:
 - It isn't marked "earlierRound", it repeats a finding marked "dropped" or "settled", the code it cites hasn't changed since, and it cites no code that contradicts the reason given then.
-- It isn't marked "earlierRound" and it repeats a finding an earlier round reported: that one is checked on its own.
 - Its severity is "low" or "nit", and the author declined it, or the same kind of finding somewhere else, with a reason.
 - Its severity is "high" or "medium", the author declined it with a reason, and the code bears that reason out. If the code doesn't, confirm the finding and say why the reason fails.
 - It asks to undo a change that an earlier round's finding asked for.

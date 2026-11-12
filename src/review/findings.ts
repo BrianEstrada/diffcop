@@ -304,6 +304,8 @@ export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
   const dropped: DroppedFinding[] = [];
   // The dropped findings that every verdict refuted, as opposed to ones left without a clear verdict.
   const refuted = new Set<Finding>();
+  // A finding left out as a repeat, and the one in the batch that stands for it.
+  const duplicates = new Map<Finding, Finding>();
   const settled: SettledFinding[] = [];
   const verdictsOf = findings.map((_, index) => {
     return verdicts.filter((v) => {
@@ -317,11 +319,14 @@ export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
     const own = verdictsOf[index] ?? [];
     const target = targets[index];
     if (target !== undefined) {
+      const original = findings[target - 1];
       if (targets[target - 1] !== undefined) {
         dropped.push({
           finding: finding,
           reason: "Marked a duplicate of another duplicate",
         });
+      } else if (original) {
+        duplicates.set(finding, original);
       }
       return;
     }
@@ -348,6 +353,7 @@ export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
     confirmedFrom: confirmedFrom,
     dropped: dropped,
     refuted: refuted,
+    duplicates: duplicates,
     settled: settled,
   };
 }
