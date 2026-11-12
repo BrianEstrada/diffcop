@@ -334,6 +334,8 @@ export default defineCommand({
       full ||= work.full;
       ledger = ledgerFromComments(comments);
     } else {
+      // No comment to read the last base from, so only the edit's own run sees a moved base.
+      full ||= pr?.action === "edited" && pr.descriptionEdited === false;
       ledger = await ledgerFile?.load();
     }
     // A round is keyed by its commit, so reviewing one again redoes its round.
