@@ -335,6 +335,8 @@ describe("FindAndVerify on a re-review", () => {
     expect(result.rereview).toEqual({
       since: "aaaaaaa",
       settled: [],
+      fixed: [],
+      stillOpen: 0,
       leftOut: 2,
     });
   });
@@ -364,11 +366,13 @@ describe("FindAndVerify on a re-review", () => {
     expect(result.findings).toHaveLength(1);
     expect(result.rereview).toEqual({
       settled: [],
+      fixed: [],
+      stillOpen: 0,
       leftOut: 0,
     });
   });
 
-  test("checks the last round's blocking bug again, and keeps it while it's still there", async () => {
+  test("checks the last round's finding again, and keeps it while it's still there", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
@@ -399,9 +403,74 @@ describe("FindAndVerify on a re-review", () => {
         endLine: 14,
       },
     ]);
+    expect(result.rereview).toMatchObject({
+      fixed: [],
+      stillOpen: 1,
+    });
   });
 
-  test("drops a carried bug that was fixed without listing it as dropped", async () => {
+  test("carries a minor finding over too, though the code it cites hasn't changed", async () => {
+    const minor = {
+      ...reported("Open nit"),
+      severity: "nit" as const,
+      startLine: 50,
+      endLine: 50,
+    };
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [],
+      },
+      { verdicts: [verdict(1, "confirmed")] },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([minor]), [prompt]);
+
+    expect(findingsSent(agent.runs[1])).toEqual([["Open nit", true]]);
+    expect(
+      result.findings.map(({ title, severity }) => {
+        return [title, severity];
+      }),
+    ).toEqual([["Open nit", "nit"]]);
+    expect(result.rereview).toMatchObject({
+      stillOpen: 1,
+      leftOut: 0,
+    });
+  });
+
+  test("moves a carried finding the author declined to the settled ones", async () => {
+    const agent = new FakeAgent([
+      {
+        summary: "",
+        findings: [],
+      },
+      { verdicts: [verdict(1, "settled", "Declined in the description.")] },
+    ]);
+
+    const result = await new FindAndVerify(
+      new ReviewPromptBuilder(),
+      agent,
+      silent,
+    ).run(reviewedBefore([reported("Declined")]), [prompt]);
+
+    expect(result.findings).toEqual([]);
+    expect(result.rereview).toMatchObject({
+      settled: [
+        {
+          finding: finding("Declined"),
+          reason: "Declined in the description.",
+        },
+      ],
+      fixed: [],
+      stillOpen: 0,
+    });
+  });
+
+  test("reports a carried finding the code no longer has as fixed, not as dropped", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
@@ -431,9 +500,18 @@ describe("FindAndVerify on a re-review", () => {
         reason: "A guard.",
       },
     ]);
+    expect(result.rereview).toMatchObject({
+      fixed: [
+        {
+          finding: finding("Fixed since"),
+          reason: "Fixed.",
+        },
+      ],
+      stillOpen: 0,
+    });
   });
 
-  test("lists a carried bug as dropped when the verifier skipped it, so it isn't lost silently", async () => {
+  test("keeps a carried finding open when the verifier gave no clear verdict on it", async () => {
     const agent = new FakeAgent([
       {
         summary: "",
@@ -448,12 +526,12 @@ describe("FindAndVerify on a re-review", () => {
       silent,
     ).run(reviewedBefore([reported("Skipped")]), [prompt]);
 
-    expect(result.dropped).toEqual([
-      {
-        finding: finding("Skipped"),
-        reason: "No verdict returned",
-      },
-    ]);
+    expect(result.findings).toEqual([finding("Skipped")]);
+    expect(result.dropped).toEqual([]);
+    expect(result.rereview).toMatchObject({
+      fixed: [],
+      stillOpen: 1,
+    });
   });
 
   test("merges a carried bug a finder found again, keeping the fresh finding", async () => {

@@ -176,6 +176,11 @@ export interface Rereview {
   // The last reviewed commit, when minor findings were kept to what changed since it.
   since?: string;
   settled: SettledFinding[];
+  // Findings the last round left open that the code no longer has, with what the verifier saw.
+  // Absent from a round reviewed before open findings were all carried over.
+  fixed?: SettledFinding[];
+  // How many of this round's findings the last round had already reported.
+  stillOpen?: number;
   // Minor findings left out for citing code unchanged since `since`.
   leftOut: number;
 }
@@ -223,6 +228,10 @@ export function numberFindings(
 
 function isConfirmed(verdict: Verdict) {
   return verdict.verdict === "confirmed";
+}
+
+function isRefuted(verdict: Verdict) {
+  return verdict.verdict === "refuted";
 }
 
 function isSettled(verdict: Verdict) {
@@ -290,7 +299,11 @@ function duplicateTarget(own: Verdict[], id: number, count: number) {
 // original standing for it, unless that original is itself marked a duplicate.
 export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
   const confirmed: Finding[] = [];
+  // The findings as given, in step with `confirmed`, whose lines can be the verifier's.
+  const confirmedFrom: Finding[] = [];
   const dropped: DroppedFinding[] = [];
+  // The dropped findings that every verdict refuted, as opposed to ones left without a clear verdict.
+  const refuted = new Set<Finding>();
   const settled: SettledFinding[] = [];
   const verdictsOf = findings.map((_, index) => {
     return verdicts.filter((v) => {
@@ -314,6 +327,7 @@ export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
     }
     if (own.length > 0 && own.every(isConfirmed)) {
       confirmed.push(relocated(finding, own));
+      confirmedFrom.push(finding);
     } else if (own.length > 0 && own.every(isSettled)) {
       settled.push({
         finding: finding,
@@ -324,11 +338,16 @@ export function splitByVerdict(findings: Finding[], verdicts: Verdict[]) {
         finding: finding,
         reason: dropReason(own),
       });
+      if (own.length > 0 && own.every(isRefuted)) {
+        refuted.add(finding);
+      }
     }
   });
   return {
     confirmed: confirmed,
+    confirmedFrom: confirmedFrom,
     dropped: dropped,
+    refuted: refuted,
     settled: settled,
   };
 }

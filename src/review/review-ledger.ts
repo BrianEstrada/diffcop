@@ -2,7 +2,12 @@ import { z } from "zod";
 import { SCOPES, SEVERITIES } from "@/review/findings";
 import type { Finding, ReviewResult } from "@/review/findings";
 
-export const LEDGER_STATUSES = ["reported", "dropped", "settled"] as const;
+export const LEDGER_STATUSES = [
+  "reported",
+  "dropped",
+  "settled",
+  "fixed",
+] as const;
 
 export type LedgerStatus = (typeof LEDGER_STATUSES)[number];
 
@@ -16,7 +21,7 @@ const ledgerEntrySchema = z.object({
   // Trimmed first when the ledger outgrows its store.
   explanation: z.string().optional(),
   status: z.enum(LEDGER_STATUSES),
-  // The verifier's reason, for a dropped or settled finding.
+  // The verifier's reason, for a dropped, settled or fixed finding.
   reason: z.string().optional(),
   // The author's reply, for a caller that has it; on a PR it's in the description instead.
   answer: z.string().optional(),
@@ -28,6 +33,9 @@ const ledgerRoundSchema = z.object({
   // Hex only: it's passed to git as an argument.
   headSha: z.string().regex(/^[0-9a-f]{7,64}$/),
   entries: z.array(ledgerEntrySchema),
+  // Its reported entries are every finding still open then, not only what the round found anew.
+  // Absent from a round reviewed before open findings were all carried over.
+  complete: z.boolean().optional(),
 });
 
 export type LedgerRound = z.infer<typeof ledgerRoundSchema>;
@@ -90,10 +98,15 @@ export function appendRound(
     ...(rereview?.settled ?? []).map(({ finding, reason }) => {
       return entry(finding, "settled", reason);
     }),
+    ...(rereview?.fixed ?? []).map(({ finding, reason }) => {
+      return entry(finding, "fixed", reason);
+    }),
   ];
   return addRound(ledger, {
     headSha: headSha,
     entries: entries,
+    // A first review lists all it found. A later one does once it carries the open ones over.
+    ...((!rereview || rereview.fixed !== undefined) && { complete: true }),
   });
 }
 
@@ -108,23 +121,44 @@ export function addRound(
   };
 }
 
-// The last round's bugs that were reported as blocking: checked again each round, so
-// one that's still there stays in the review even if no finder comes across it.
+function isOpen({ status }: LedgerEntry) {
+  return status === "reported";
+}
+
+function sameFinding(a: LedgerEntry, b: LedgerEntry) {
+  return a.file === b.file && a.title === b.title;
+}
+
+// Every finding still open after the last round, each checked again this round: one that's
+// still there stays in the review, and one that's gone is reported as fixed.
+// A round from before open findings were all carried over repeated only the bugs, so its minor
+// ones are still in the rounds that first reported them.
 export function carriedFindings(rounds: LedgerRound[]): Finding[] {
-  return (rounds.at(-1)?.entries ?? [])
-    .filter((item) => {
-      return (
-        item.status === "reported" &&
-        item.scope === "introduced" &&
-        isMajor(item)
-      );
-    })
-    .map(({ status: _status, reason: _reason, answer: _answer, ...item }) => {
+  const open: LedgerEntry[] = [];
+  for (const [age, round] of rounds.toReversed().entries()) {
+    const candidates = round.entries.filter((item) => {
+      return isOpen(item) && (age === 0 || !isMajor(item));
+    });
+    for (const candidate of candidates) {
+      const known = open.some((item) => {
+        return sameFinding(item, candidate);
+      });
+      if (!known) {
+        open.push(candidate);
+      }
+    }
+    if (round.complete) {
+      break;
+    }
+  }
+  return open.map(
+    ({ status: _status, reason: _reason, answer: _answer, ...item }) => {
       return {
         ...item,
         explanation: item.explanation ?? "",
       };
-    });
+    },
+  );
 }
 
 function mapRound(

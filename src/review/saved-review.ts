@@ -43,6 +43,8 @@ const reviewResultSchema = z.object({
     .object({
       since: z.string().optional(),
       settled: z.array(judgedFindingSchema),
+      fixed: z.array(judgedFindingSchema).optional(),
+      stillOpen: z.number().optional(),
       leftOut: z.number(),
     })
     .optional(),

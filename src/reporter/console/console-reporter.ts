@@ -5,9 +5,10 @@ import type { ReviewLayout } from "@/reporter/review-layout";
 import type { ReviewReporter, TextSink } from "@/reporter/review-reporter";
 import { formatStats } from "@/reporter/stats";
 
-function formatMarkdown({ headline, sections }: ReviewLayout) {
+function formatMarkdown({ headline, progress, sections }: ReviewLayout) {
   return [
     `${headline.icon} **${headline.text}**`,
+    ...(progress === undefined ? [] : [progress]),
     ...sections.map((section) => {
       return `## ${sectionHeading(section)}\n\n${section.body}`;
     }),

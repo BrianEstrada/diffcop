@@ -155,8 +155,11 @@ export class ReviewCommentFormatter {
   }
 
   // Truncates inside a section's body, so a cut never leaves <details> open.
-  #body({ headline, sections }: ReviewLayout, maxChars: number) {
-    const top = `${headline.icon} **${headline.text}**`;
+  #body({ headline, progress, sections }: ReviewLayout, maxChars: number) {
+    let top = `${headline.icon} **${headline.text}**`;
+    if (progress !== undefined) {
+      top = `${top}\n\n${progress}`;
+    }
     const blocks = [top];
     let room = maxChars - top.length;
     for (const section of sections) {

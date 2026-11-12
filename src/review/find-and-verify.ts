@@ -10,7 +10,6 @@ import type { ReviewReporter } from "@/reporter/review-reporter";
 import {
   duplicatesSchema,
   findingsSchema,
-  NO_VERDICT,
   preferFresh,
   removeDuplicates,
   splitByVerdict,
@@ -212,6 +211,8 @@ export class FindAndVerify {
     const confirmed: Finding[] = [];
     const dropped: DroppedFinding[] = [];
     const settledEarlier: SettledFinding[] = [];
+    const fixed: SettledFinding[] = [];
+    let stillOpen = 0;
     if (findings.length > 0) {
       await this.#reporter.verifying(findings.length);
       const batches = verificationBatches(findings);
@@ -238,12 +239,20 @@ export class FindAndVerify {
           result.output.verdicts,
         );
         confirmed.push(...split.confirmed);
-        // A refuted finding from the last round was fixed since, so it isn't listed as dropped.
-        dropped.push(
-          ...split.dropped.filter(({ finding, reason }) => {
-            return !carried.has(finding) || reason === NO_VERDICT;
-          }),
-        );
+        stillOpen += split.confirmedFrom.filter((finding) => {
+          return carried.has(finding);
+        }).length;
+        for (const judged of split.dropped) {
+          if (!carried.has(judged.finding)) {
+            dropped.push(judged);
+          } else if (split.refuted.has(judged.finding)) {
+            fixed.push(judged);
+          } else {
+            // An earlier round verified it, and no clear verdict now isn't a sign it was fixed.
+            confirmed.push(judged.finding);
+            stillOpen += 1;
+          }
+        }
         // Without earlier rounds nothing can be settled, so the verdict counts as a refutation.
         (previous ? settledEarlier : dropped).push(...split.settled);
         verified.push(result);
@@ -266,6 +275,8 @@ export class FindAndVerify {
       result.rereview = {
         ...(previous.delta && { since: previous.delta.since }),
         settled: settledEarlier,
+        fixed: fixed,
+        stillOpen: stillOpen,
         leftOut: count(reported) - count(kept),
       };
     }

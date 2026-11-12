@@ -530,6 +530,7 @@ describe("ReviewCommentFormatter memory", () => {
               reason: "Guarded by the caller.",
             },
           ],
+          complete: true,
         },
       ],
     });
@@ -586,6 +587,32 @@ describe("ReviewCommentFormatter memory", () => {
     expect(readSavedReview(body)?.result.findings[0]?.explanation).toHaveLength(
       72_000,
     );
+  });
+
+  test("says under the headline what became of the last round's findings", () => {
+    const body = new ReviewCommentFormatter(pr).review({
+      ...review([finding("high", "Still throws."), finding("nit", "New.")]),
+      rereview: {
+        since: "1111111222",
+        settled: [],
+        fixed: [
+          {
+            finding: finding("low", "Was off by one."),
+            reason: "The bound is inclusive now.",
+          },
+        ],
+        stillOpen: 1,
+        leftOut: 0,
+      },
+    });
+
+    expect(body).toContain(
+      "🔴 **1 issue, 1 minor finding**\n\nSince `1111111`: 1 fixed, 1 still open, 1 new.\n\n<details><summary><b>Findings (2)</b></summary>",
+    );
+    expect(body).toContain(
+      "<details><summary><b>Fixed since the last review (1)</b></summary>",
+    );
+    expect(body).toContain("The bound is inclusive now.");
   });
 
   test("says in the footer which commit a re-review focused on changes since", () => {

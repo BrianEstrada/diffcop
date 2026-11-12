@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Explored } from "@/agent/explored";
-import type { DroppedFinding, Finding } from "@/review/findings";
+import type { DroppedFinding, Finding, Rereview } from "@/review/findings";
 import { code, reviewLayout, sectionHeading } from "@/reporter/review-layout";
 
 const low: Finding = {
@@ -358,6 +358,85 @@ describe("reviewLayout on a re-review", () => {
     expect(settled?.body).toContain(
       "Declined in round 1: the other handlers do the same.",
     );
+  });
+
+  function progress(
+    findings: Finding[],
+    rereview: Partial<Rereview>,
+  ): string | undefined {
+    return reviewLayout({
+      summary: "",
+      findings: findings,
+      dropped: [],
+      explored: nothingExplored,
+      rereview: {
+        settled: [],
+        leftOut: 0,
+        ...rereview,
+      },
+    }).progress;
+  }
+
+  const gone = {
+    finding: low,
+    reason: "The page count rounds up now.",
+  };
+
+  test("says what became of the last round's findings", () => {
+    expect(
+      progress([high, nit, medium], {
+        since: "aaaaaaa1234",
+        fixed: [gone],
+        settled: [gone],
+        stillOpen: 2,
+      }),
+    ).toBe("Since `aaaaaaa`: 1 fixed, 1 settled, 2 still open, 1 new.");
+  });
+
+  test("leaves out the counts that are zero", () => {
+    expect(
+      progress([high], {
+        since: "aaaaaaa1234",
+        fixed: [],
+        stillOpen: 1,
+      }),
+    ).toBe("Since `aaaaaaa`: 1 still open.");
+  });
+
+  test("doesn't count a description mismatch as new, since it's checked afresh each round", () => {
+    expect(
+      progress([mismatch, high], {
+        fixed: [],
+        stillOpen: 1,
+      }),
+    ).toBe("Since the last review: 1 still open.");
+  });
+
+  test("says nothing when there's nothing to tell, or on a round from before findings were carried over", () => {
+    expect(progress([], { fixed: [] })).toBeUndefined();
+    expect(progress([high], {})).toBeUndefined();
+    expect(layout([high]).progress).toBeUndefined();
+  });
+
+  test("lists what was fixed with the verifier's reason", () => {
+    const { sections } = reviewLayout({
+      summary: "",
+      findings: [],
+      dropped: [],
+      explored: nothingExplored,
+      rereview: {
+        settled: [],
+        fixed: [gone],
+        stillOpen: 0,
+        leftOut: 0,
+      },
+    });
+
+    expect(sections.map(sectionHeading)).toEqual([
+      "Fixed since the last review (1)",
+      "What we looked at",
+    ]);
+    expect(sections[0]?.body).toContain("The page count rounds up now.");
   });
 
   test("says how many minor findings were left out, and since which commit", () => {

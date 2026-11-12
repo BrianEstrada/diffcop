@@ -152,7 +152,7 @@ describe("splitByVerdict", () => {
           reason: "Fails on null.",
         },
       ]),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [finding("A"), finding("D")],
       dropped: [
         {
@@ -185,7 +185,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [],
       dropped: [
         {
@@ -235,7 +235,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [],
       dropped: [
         {
@@ -265,7 +265,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [finding("A")],
       dropped: [],
       settled: [],
@@ -321,7 +321,7 @@ describe("splitByVerdict", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [],
       dropped: [
         {
@@ -439,7 +439,7 @@ describe("splitByVerdict on a re-review", () => {
           },
         ],
       ),
-    ).toEqual({
+    ).toMatchObject({
       confirmed: [finding("B")],
       dropped: [],
       settled: [
@@ -621,5 +621,59 @@ describe("preferFresh", () => {
     };
 
     expect(preferFresh(deduped, new Set([carried]))).toEqual(deduped);
+  });
+});
+
+describe("splitByVerdict, for findings checked again", () => {
+  const still = finding("A");
+  const gone = finding("B");
+  const split = splitByVerdict(
+    [still, gone, finding("C"), finding("D")],
+    [
+      {
+        id: 1,
+        verdict: "confirmed",
+        reason: "Still there.",
+        startLine: 40,
+        endLine: 42,
+      },
+      {
+        id: 2,
+        verdict: "refuted",
+        reason: "The guard was added.",
+      },
+      {
+        id: 3,
+        verdict: "refuted",
+        reason: "Gone.",
+      },
+      {
+        id: 3,
+        verdict: "confirmed",
+        reason: "Still there.",
+      },
+    ],
+  );
+
+  test("keeps the finding as given beside the one with the verifier's lines", () => {
+    expect(split.confirmed).toEqual([
+      {
+        ...finding("A"),
+        startLine: 40,
+        endLine: 42,
+      },
+    ]);
+    expect(split.confirmedFrom[0]).toBe(still);
+    expect(split.confirmedFrom).toHaveLength(1);
+  });
+
+  test("tells a refuted finding from one without a clear verdict", () => {
+    expect(split.refuted.has(gone)).toBe(true);
+    expect(split.refuted.size).toBe(1);
+    expect(
+      split.dropped.map(({ finding: dropped }) => {
+        return dropped.title;
+      }),
+    ).toEqual(["B", "C", "D"]);
   });
 });

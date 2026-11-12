@@ -7,7 +7,11 @@ import {
   fitLedger,
   reviewLedgerSchema,
 } from "@/review/review-ledger";
-import type { LedgerEntry, ReviewLedger } from "@/review/review-ledger";
+import type {
+  LedgerEntry,
+  LedgerRound,
+  ReviewLedger,
+} from "@/review/review-ledger";
 
 function finding(title: string, overrides: Partial<Finding> = {}): Finding {
   return {
@@ -143,9 +147,67 @@ describe("appendRound", () => {
       result({ findings: [finding("C")] }),
     );
 
-    expect(appended).toEqual(
-      ledger(["aaaaaaa", [entry("A")]], ["bbbbbbb", [entry("C")]]),
+    expect(appended.rounds).toEqual([
+      {
+        headSha: "aaaaaaa",
+        entries: [entry("A")],
+      },
+      {
+        headSha: "bbbbbbb",
+        entries: [entry("C")],
+        complete: true,
+      },
+    ]);
+  });
+
+  test("records what a re-review found fixed, and that it lists every open finding", () => {
+    const appended = appendRound(
+      undefined,
+      "bbbbbbb",
+      result({
+        findings: [finding("Still open")],
+        rereview: {
+          settled: [],
+          fixed: [
+            {
+              finding: finding("Gone"),
+              reason: "The guard was added.",
+            },
+          ],
+          stillOpen: 1,
+          leftOut: 0,
+        },
+      }),
     );
+
+    expect(appended.rounds).toEqual([
+      {
+        headSha: "bbbbbbb",
+        entries: [
+          entry("Still open"),
+          entry("Gone", {
+            status: "fixed",
+            reason: "The guard was added.",
+          }),
+        ],
+        complete: true,
+      },
+    ]);
+  });
+
+  test("doesn't take a re-review from before open findings were carried over for complete", () => {
+    const appended = appendRound(
+      undefined,
+      "bbbbbbb",
+      result({
+        rereview: {
+          settled: [],
+          leftOut: 0,
+        },
+      }),
+    );
+
+    expect(appended.rounds[0]?.complete).toBeUndefined();
   });
 });
 
@@ -165,7 +227,13 @@ describe("earlierRounds", () => {
 });
 
 describe("carriedFindings", () => {
-  test("carries the last round's reported bugs that block the change", () => {
+  function titles(rounds: LedgerRound[]) {
+    return carriedFindings(rounds).map(({ title }) => {
+      return title;
+    });
+  }
+
+  test("carries every finding the last round left open, whatever its severity", () => {
     const { rounds } = ledger(
       ["aaaaaaa", [entry("Old")]],
       [
@@ -184,14 +252,85 @@ describe("carriedFindings", () => {
             status: "settled",
             reason: "Declined.",
           }),
+          entry("Fixed", {
+            status: "fixed",
+            reason: "The guard was added.",
+          }),
+        ],
+      ],
+    );
+    const complete = rounds.map((round) => {
+      return {
+        ...round,
+        complete: true,
+      };
+    });
+
+    expect(carriedFindings(complete)).toEqual([
+      finding("High"),
+      finding("Medium", { severity: "medium" }),
+      finding("Low", { severity: "low" }),
+      finding("Nit", { severity: "nit" }),
+      finding("Preexisting", { scope: "preexisting" }),
+    ]);
+  });
+
+  test("goes back for the minor findings of rounds that only carried bugs over", () => {
+    const { rounds } = ledger(
+      [
+        "aaaaaaa",
+        [
+          entry("Bug, fixed since"),
+          entry("Nit from round 1", { severity: "nit" }),
+          entry("Dropped", {
+            status: "dropped",
+            reason: "Guarded.",
+          }),
+        ],
+      ],
+      [
+        "bbbbbbb",
+        [
+          entry("Bug, still open"),
+          entry("Low from round 2", { severity: "low" }),
         ],
       ],
     );
 
-    expect(carriedFindings(rounds)).toEqual([
-      finding("High"),
-      finding("Medium", { severity: "medium" }),
+    expect(titles(rounds)).toEqual([
+      "Bug, still open",
+      "Low from round 2",
+      "Nit from round 1",
     ]);
+  });
+
+  test("stops at the last round that listed every open finding", () => {
+    const rounds: LedgerRound[] = [
+      {
+        headSha: "aaaaaaa",
+        entries: [entry("Nit, fixed since", { severity: "nit" })],
+      },
+      {
+        headSha: "bbbbbbb",
+        entries: [entry("Nit, open", { severity: "nit" })],
+        complete: true,
+      },
+      {
+        headSha: "ccccccc",
+        entries: [entry("Bug")],
+      },
+    ];
+
+    expect(titles(rounds)).toEqual(["Bug", "Nit, open"]);
+  });
+
+  test("carries a finding once when two rounds reported it", () => {
+    const { rounds } = ledger(
+      ["aaaaaaa", [entry("Same", { severity: "nit" })]],
+      ["bbbbbbb", [entry("Same", { severity: "nit" })]],
+    );
+
+    expect(titles(rounds)).toEqual(["Same"]);
   });
 
   test("carries a finding whose explanation was trimmed", () => {
