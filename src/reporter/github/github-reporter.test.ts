@@ -278,7 +278,7 @@ describe("GitHubReporter", () => {
       },
     ]);
     expect(log.text).toBe(
-      "Posted the diffcop comment on owner/repo#7\nHid 1 earlier diffcop comment as outdated\n",
+      "Wrote the diffcop comment on owner/repo#7\nHid 1 earlier diffcop comment as outdated\n",
     );
   });
 

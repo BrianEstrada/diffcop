@@ -53,8 +53,9 @@ function headMarker(headSha: string) {
 }
 
 // The markers that open the body. A finding's text further down can quote one, so only these count.
+// A comment edited on github.com comes back with CRLF line endings.
 function header(body: string) {
-  const lines = body.split("\n");
+  const lines = body.split(/\r?\n/);
   const end = lines.findIndex((line) => {
     return !/^<!-- diffcop:[^>]* -->$/.test(line);
   });

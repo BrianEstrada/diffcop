@@ -113,7 +113,7 @@ export class GitHubReporter implements ReviewReporter {
     const posted = await this.#comment.upsert(body, { onlyIfOwned: true });
     const where = this.#comment.location;
     if (posted) {
-      this.#log.write(`Posted the diffcop comment on ${where}\n`);
+      this.#log.write(`Wrote the diffcop comment on ${where}\n`);
     } else {
       this.#log.write(
         `A newer run has taken over the diffcop comment on ${where}; leaving it alone\n`,

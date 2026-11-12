@@ -650,6 +650,21 @@ describe("ReviewComments, one comment per commit", () => {
     );
   });
 
+  test("reads the markers of a comment edited on github.com", async () => {
+    const { calls, fetch } = fakeGitHub([
+      [
+        {
+          id: 500,
+          body: diffcopComment("43").replaceAll("\n", "\r\n"),
+        },
+      ],
+    ]);
+    const store = comments(run, fetch);
+    expect(await store.superseded()).toBe(true);
+    expect(await comments(pr, fetch).upsert("new")).toBe(true);
+    expect(calls.at(-1)?.method).toBe("PATCH");
+  });
+
   test("rewrite keeps the comment's commit", async () => {
     const { calls, fetch } = fakeGitHub([
       [
