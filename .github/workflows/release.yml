@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   release:
-    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@34f77fb8bbfb45a10b11bac545f55e0addd83e46 # main
+    uses: BrianEstrada/.github/.github/workflows/bun-npm-release.yml@6c34504c5f6494234674f840e629991d300be53f # main
     with:
       version: ${{ inputs.version }}
       publish-only: ${{ inputs.publish-only }}
